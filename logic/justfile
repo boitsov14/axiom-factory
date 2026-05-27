@@ -48,11 +48,6 @@ lint2:
     just fmt
     RUSTFLAGS="-A dead_code" cargo +nightly clippy --all-targets --all-features
 
-# Lint code in release mode
-lint-release:
-    just fmt
-    cargo +nightly clippy --all-targets --all-features --release
-
 ###################################
 # Tests
 ###################################
