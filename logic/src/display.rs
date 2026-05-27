@@ -49,7 +49,7 @@ impl Formula {
     fn to_text(&self, stack: &mut Vec<Id>, used: &mut HashSet<Id>) -> String {
         use Formula::*;
         match self {
-            False => "False".to_string(),
+            False => "False".into(),
             Atom(pred, args) if args.is_empty() => pred.clone(),
             Atom(pred, args) => {
                 let args = args
@@ -139,7 +139,7 @@ impl fmt::Display for Formula {
 
 /// `avoid` に含まれない ID を作る。
 pub fn fresh(base: &str, avoid: &HashSet<Id>) -> Id {
-    let mut x = base.to_string();
+    let mut x = base.to_owned();
     while avoid.contains(&x) {
         x.push('\'');
     }

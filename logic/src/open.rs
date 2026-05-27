@@ -6,7 +6,7 @@ impl Term {
         use Term::*;
         match self {
             Bound(i) if *i == depth => {
-                *self = Var(x.to_string());
+                *self = Var(x.into());
             }
             Var(_) | Bound(_) => {}
             Fn(_, args) => {

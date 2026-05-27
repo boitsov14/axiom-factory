@@ -7,3 +7,58 @@ edition = "2024"
 crate-type = ["cdylib"]
 
 [dependencies]
+
+[lints.clippy]
+pedantic = { level = "warn", priority = -1 }
+nursery = { level = "warn", priority = -1 }
+# pedantic
+similar_names = "allow" # it's ok to have similar names
+enum_glob_use = "allow" # want to use `use Formula::*;` for example
+too_many_lines = "allow" # it's ok to have long code
+match_wildcard_for_single_variants = "allow" # want to use `_` in matches
+implicit_hasher = "allow" # hasher is redundant
+must_use_candidate = "allow" # #[must_use] is redundant
+# nursery
+cognitive_complexity = "allow" # it's ok to have complex code
+# restriction
+absolute_paths = "warn" # avoid full paths
+allow_attributes = "warn" # use `#[expect(...)]` instead of `#[allow(...)]`
+as_conversions = "warn" # avoid `as`
+assertions_on_result_states = "warn" # use `.unwrap()` instead of `assert!(result.is_ok())`
+empty_enum_variants_with_brackets = "warn" # avoid unnecessary brackets
+empty_structs_with_brackets = "warn" # avoid unnecessary brackets
+get_unwrap = "warn" # use [] instead of `.get().unwrap()`
+if_then_some_else_none = "warn" # use `bool::then_some` or `bool::then` instead of `if ... { Some(..) } else { None }`
+large_include_file = "warn" # avoid too large `include_str!`
+map_with_unused_argument_over_ranges = "warn" # use `repeat` and `take` instead of `map(|_| ...)`
+missing_assert_message = "warn" # must have messages in `assert!()`
+needless_raw_strings = "warn" # avoid unnecessary raw strings
+panic = "warn" # avoid `panic!()`
+partial_pub_fields = "warn" # avoid partial public fields
+print_stderr = "warn" # avoid `eprintln!()`
+print_stdout = "warn" # avoid `println!()`
+redundant_type_annotations = "warn" # avoid redundant type annotations
+ref_patterns = "warn" # avoid `ref`
+rest_pat_in_fully_bound_structs = "warn" # avoid unnecessary `..`
+return_and_then = "warn" # use `?` instead of `and_then`
+str_to_string = "warn" # use `into` or `to_owned` instead of `to_string`
+string_lit_chars_any = "warn" # use `matches!` instead of `.chars().any(...)`
+tests_outside_test_module = "warn" # put tests in `#[cfg(test)]`
+unneeded_field_pattern = "warn" # use `..` instead of `_`
+use_debug = "warn" # avoid debug formatting
+dbg_macro = "warn" # avoid `dbg!`
+
+[lints.rust]
+explicit-outlives-requirements = "warn" # avoid unnecessary lifetime bounds
+redundant-lifetimes = "warn" # avoid redundant lifetime parameters
+unused_crate_dependencies = "warn"
+unused_import_braces = "warn"
+unused_lifetimes = "warn"
+unused_macro_rules = "warn"
+unused_qualifications = "warn"
+unused_results = "warn"
+trivial_casts = "warn"
+non_ascii_idents = "warn"
+
+[lints.rustdoc]
+unescaped_backticks = "warn" # avoid unescaped backticks in doc comments

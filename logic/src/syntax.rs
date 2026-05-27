@@ -14,7 +14,7 @@ pub enum Sort {
 pub enum Term {
     Var(Id),
     Bound(usize),
-    Fn(Id, Vec<Term>),
+    Fn(Id, Vec<Self>),
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
@@ -22,13 +22,13 @@ pub enum Formula {
     False,
     Atom(Id, Vec<Term>),
     Eq(Term, Term),
-    Not(Box<Formula>),
-    And(Box<Formula>, Box<Formula>),
-    Or(Box<Formula>, Box<Formula>),
-    To(Box<Formula>, Box<Formula>),
-    Iff(Box<Formula>, Box<Formula>),
-    All { v: Id, sort: Sort, body: Box<Formula> },
-    Ex { v: Id, sort: Sort, body: Box<Formula> },
+    Not(Box<Self>),
+    And(Box<Self>, Box<Self>),
+    Or(Box<Self>, Box<Self>),
+    To(Box<Self>, Box<Self>),
+    Iff(Box<Self>, Box<Self>),
+    All { v: Id, sort: Sort, body: Box<Self> },
+    Ex { v: Id, sort: Sort, body: Box<Self> },
 }
 
 impl fmt::Display for Sort {

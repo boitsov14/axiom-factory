@@ -1,0 +1,16 @@
+# stable
+edition = "2024"
+style_edition = "2024"
+newline_style = "Windows"
+use_field_init_shorthand = true
+
+# nightly
+unstable_features = true
+group_imports = "One"
+imports_granularity = "Crate"
+imports_layout = "HorizontalVertical"
+reorder_impl_items = true
+condense_wildcard_suffixes = true
+format_macro_bodies = true
+format_macro_matchers = true
+error_on_unformatted = true
