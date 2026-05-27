@@ -6,7 +6,7 @@
 set windows-shell := ["C:\\Program Files\\Git\\bin\\sh.exe", "-c"]
 
 # Ignore recipe lines beginning with #.
-set ignore-comments := true
+set ignore-comments
 
 # Format justfile
 j-fmt:
@@ -107,6 +107,10 @@ machete:
 # Clean the target directory
 clean:
     cargo clean
+
+# Clean coverage artifacts
+cov-clean:
+    cargo llvm-cov clean
 
 # Count lines of code
 # To update, `go install github.com/boyter/scc/v3@latest`
