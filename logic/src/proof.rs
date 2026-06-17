@@ -2,43 +2,27 @@ use crate::syntax::{Formula, Id, Sort};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Hyp {
-    pub name: Id,
-    pub fml: Formula,
+    pub id: Id,
+    pub formula: Formula,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct Ctx {
+#[derive(Clone, Debug, PartialEq, Eq, Default)]
+pub struct Context {
     pub vars: Vec<(Id, Sort)>,
     pub hyps: Vec<Hyp>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Goal {
-    pub ctx: Ctx,
+    pub ctx: Context,
     pub target: Formula,
 }
 
-impl Ctx {
-    /// 空の `Ctx` を作る。
-    pub fn new() -> Self {
-        Self {
-            vars: Vec::new(),
-            hyps: Vec::new(),
-        }
-    }
-}
-
-impl Default for Ctx {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
 impl Goal {
-    /// 空の `Ctx` と指定されたゴールを持つ `Goal` を作る。
+    /// 空の `Context` を持つ `Goal` を作る。
     pub fn new(target: Formula) -> Self {
         Self {
-            ctx: Ctx::new(),
+            ctx: Context::default(),
             target,
         }
     }
