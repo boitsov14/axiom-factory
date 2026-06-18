@@ -2,7 +2,7 @@ use std::fmt;
 
 pub type Id = String;
 
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Sort {
     Obj,
     Nat,
@@ -10,14 +10,14 @@ pub enum Sort {
     Rat,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Term {
     Var(Id),
     Bound(usize),
     Fn(Id, Vec<Self>),
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Formula {
     False,
     Atom(Id, Vec<Term>),
@@ -35,10 +35,10 @@ impl fmt::Display for Sort {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         use Sort::*;
         match self {
-            Obj => write!(f, "Obj"),
-            Nat => write!(f, "Nat"),
-            Int => write!(f, "Int"),
-            Rat => write!(f, "Rat"),
+            Obj => write!(f, r"\mathbb{{V}}"),
+            Nat => write!(f, r"\mathbb{{N}}"),
+            Int => write!(f, r"\mathbb{{Z}}"),
+            Rat => write!(f, r"\mathbb{{R}}"),
         }
     }
 }

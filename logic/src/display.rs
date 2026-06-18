@@ -2,18 +2,13 @@ use crate::syntax::{Formula, Id, Sort, Term};
 use std::{collections::HashSet, fmt};
 
 impl Term {
-    /// `Term` を binder stack に従って表示用テキストに変換する。
+    /// `Term` を文字列に変換する。
     fn to_text(&self, stack: &[Id]) -> String {
         use Term::*;
         match self {
             Var(x) => x.clone(),
-            Bound(i) => stack
-                .len()
-                .checked_sub(i + 1)
-                .and_then(|j| stack.get(j))
-                .cloned()
-                .unwrap_or_else(|| format!("#{i}")),
-            Fn(f, args) if args.is_empty() => format!("{f}()"),
+            Bound(i) => stack[stack.len() - 1 - *i].clone(),
+            Fn(f, args) if args.is_empty() => f.clone(),
             Fn(f, args) => {
                 let args = args
                     .iter()
@@ -25,7 +20,7 @@ impl Term {
         }
     }
 
-    /// `Term` の表示衝突に関わる ID を再帰的に集める。
+    /// `Term` の ID を再帰的に集める。
     fn ids(&self, out: &mut HashSet<Id>) {
         use Term::*;
         match self {
@@ -44,11 +39,11 @@ impl Term {
 }
 
 impl Formula {
-    /// `Formula` を binder stack と使用済み ID に従って表示用テキストに変換する。
+    /// `Formula` を文字列に変換する。
     fn to_text(&self, stack: &mut Vec<Id>, used: &mut HashSet<Id>) -> String {
         use Formula::*;
         match self {
-            False => "False".into(),
+            False => r"\bot".into(),
             Atom(pred, args) if args.is_empty() => pred.clone(),
             Atom(pred, args) => {
                 let args = args
@@ -59,16 +54,24 @@ impl Formula {
                 format!("{pred}({args})")
             }
             Eq(s, t) => format!("({} = {})", s.to_text(stack), t.to_text(stack)),
-            Not(p) => format!("not {}", p.to_text(stack, used)),
+            Not(p) => format!(r"\lnot {}", p.to_text(stack, used)),
             And(p, q) => format!(
-                "({} and {})",
+                r"({} \land {})",
                 p.to_text(stack, used),
                 q.to_text(stack, used)
             ),
-            Or(p, q) => format!("({} or {})", p.to_text(stack, used), q.to_text(stack, used)),
-            To(p, q) => format!("({} -> {})", p.to_text(stack, used), q.to_text(stack, used)),
+            Or(p, q) => format!(
+                r"({} \lor {})",
+                p.to_text(stack, used),
+                q.to_text(stack, used)
+            ),
+            To(p, q) => format!(
+                r"({} \to {})",
+                p.to_text(stack, used),
+                q.to_text(stack, used)
+            ),
             Iff(p, q) => format!(
-                "({} <-> {})",
+                r"({} \leftrightarrow {})",
                 p.to_text(stack, used),
                 q.to_text(stack, used)
             ),
@@ -79,8 +82,8 @@ impl Formula {
                 let body = body.to_text(stack, used);
                 stack.pop();
                 match sort {
-                    Sort::Obj => format!("all {v}, {body}"),
-                    _ => format!("all {v} : {sort}, {body}"),
+                    Sort::Obj => format!(r"\forall {v}, {body}"),
+                    _ => format!(r"\forall {v} : {sort}, {body}"),
                 }
             }
             Ex { v, sort, body } => {
@@ -90,14 +93,14 @@ impl Formula {
                 let body = body.to_text(stack, used);
                 stack.pop();
                 match sort {
-                    Sort::Obj => format!("ex {v}, {body}"),
-                    _ => format!("ex {v} : {sort}, {body}"),
+                    Sort::Obj => format!(r"\exists {v}, {body}"),
+                    _ => format!(r"\exists {v} : {sort}, {body}"),
                 }
             }
         }
     }
 
-    /// `Formula` の表示衝突に関わる ID を再帰的に集める。
+    /// `Formula` の ID を再帰的に集める。
     fn ids(&self, used: &mut HashSet<Id>) {
         use Formula::*;
         match self {
