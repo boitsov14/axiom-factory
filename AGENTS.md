@@ -27,6 +27,7 @@ LeanのNatural Number Gameに着想を得たPCブラウザ向け証明ゲーム
 - Reactに公開するAPIは必要最小限にする
 - private/publicを問わず、通常の関数には**日本語で**doc commentを書く
 - ただし、impl fmt::Display の fmt など、トレイト実装で明示的に呼ばれない関数のdoc commentは不要
+- `Vec::new()`や`HashMap::new()`は使用せず、それぞれ`vec![]`、`hashmap!()`の形式で記述すること。
 
 ### React
 

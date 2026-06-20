@@ -1,5 +1,3 @@
-use std::fmt;
-
 pub type Id = String;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -29,16 +27,4 @@ pub enum Formula {
     Iff(Box<Self>, Box<Self>),
     All { v: Id, sort: Sort, body: Box<Self> },
     Ex { v: Id, sort: Sort, body: Box<Self> },
-}
-
-impl fmt::Display for Sort {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        use Sort::*;
-        match self {
-            Obj => write!(f, r"\mathbb{{V}}"),
-            Nat => write!(f, r"\mathbb{{N}}"),
-            Int => write!(f, r"\mathbb{{Z}}"),
-            Rat => write!(f, r"\mathbb{{R}}"),
-        }
-    }
 }

@@ -1,17 +1,16 @@
-use crate::syntax::{Formula, Term};
+use crate::syntax::{Formula, Formula::*, Term, Term::*};
 
 impl Term {
-    /// `Term` の指定された深さの `Bound` を `Var(x)` に開く。
-    fn open_rec(&mut self, depth: usize, x: &str) {
-        use Term::*;
+    /// `Term` の指定された深さの `Bound` を `t` で代入する。
+    fn open_at(&mut self, depth: usize, t: &Self) {
         match self {
             Bound(i) if *i == depth => {
-                *self = Var(x.into());
+                *self = t.clone();
             }
             Var(_) | Bound(_) => {}
             Fn(_, args) => {
-                for t in args {
-                    t.open_rec(depth, x);
+                for u in args {
+                    u.open_at(depth, t);
                 }
             }
         }
@@ -19,37 +18,31 @@ impl Term {
 }
 
 impl Formula {
-    /// `Formula` の `Bound(0)` を `Var(x)` に開く。
-    pub fn open(&mut self, x: &str) {
-        self.open_rec(0, x);
+    /// `Formula` の `Bound(0)` を `t` で代入する。
+    pub fn open(&mut self, t: &Term) {
+        self.open_at(0, t);
     }
 
-    /// `Formula` の指定された深さの `Bound` を `Var(x)` に開く。
-    fn open_rec(&mut self, depth: usize, x: &str) {
-        use Formula::*;
+    /// `Formula` の指定された深さの `Bound` を `t` で代入する。
+    fn open_at(&mut self, depth: usize, t: &Term) {
         match self {
             False => {}
-
             Atom(_, args) => {
-                for t in args {
-                    t.open_rec(depth, x);
+                for u in args {
+                    u.open_at(depth, t);
                 }
             }
-
-            Eq(s, t) => {
-                s.open_rec(depth, x);
-                t.open_rec(depth, x);
+            Eq(u, v) => {
+                u.open_at(depth, t);
+                v.open_at(depth, t);
             }
-
-            Not(p) => p.open_rec(depth, x),
-
+            Not(p) => p.open_at(depth, t),
             And(p, q) | Or(p, q) | To(p, q) | Iff(p, q) => {
-                p.open_rec(depth, x);
-                q.open_rec(depth, x);
+                p.open_at(depth, t);
+                q.open_at(depth, t);
             }
-
             All { body, .. } | Ex { body, .. } => {
-                body.open_rec(depth + 1, x);
+                body.open_at(depth + 1, t);
             }
         }
     }

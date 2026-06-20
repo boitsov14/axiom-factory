@@ -1,4 +1,8 @@
-use crate::syntax::{Formula, Id, Sort, Term};
+use crate::{
+    Sort::*,
+    syntax::{Formula, Id, Sort, Term},
+};
+use maplit::hashset;
 use std::{collections::HashSet, fmt};
 
 impl Term {
@@ -82,7 +86,7 @@ impl Formula {
                 let body = body.to_text(stack, used);
                 stack.pop();
                 match sort {
-                    Sort::Obj => format!(r"\forall {v}, {body}"),
+                    Obj => format!(r"\forall {v}, {body}"),
                     _ => format!(r"\forall {v} : {sort}, {body}"),
                 }
             }
@@ -93,7 +97,7 @@ impl Formula {
                 let body = body.to_text(stack, used);
                 stack.pop();
                 match sort {
-                    Sort::Obj => format!(r"\exists {v}, {body}"),
+                    Obj => format!(r"\exists {v}, {body}"),
                     _ => format!(r"\exists {v} : {sort}, {body}"),
                 }
             }
@@ -125,6 +129,17 @@ impl Formula {
     }
 }
 
+impl fmt::Display for Sort {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Obj => write!(f, r"\mathbb{{V}}"),
+            Nat => write!(f, r"\mathbb{{N}}"),
+            Int => write!(f, r"\mathbb{{Z}}"),
+            Rat => write!(f, r"\mathbb{{R}}"),
+        }
+    }
+}
+
 impl fmt::Display for Term {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", self.to_text(&[]))
@@ -133,9 +148,9 @@ impl fmt::Display for Term {
 
 impl fmt::Display for Formula {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let mut used = HashSet::new();
+        let mut used = hashset!();
         self.ids(&mut used);
-        write!(f, "{}", self.to_text(&mut Vec::new(), &mut used))
+        write!(f, "{}", self.to_text(&mut vec![], &mut used))
     }
 }
 
