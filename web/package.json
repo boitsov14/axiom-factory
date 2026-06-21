@@ -1,0 +1,28 @@
+{
+  "name": "axiom-factory-web",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "wasm": "cd ../logic && wasm-pack build --target web --out-dir ../web/src/wasm",
+    "dev": "bun run wasm && vite --host 0.0.0.0",
+    "build": "bun run wasm && vite build && svelte-check --tsconfig ./tsconfig.json",
+    "check": "svelte-check --tsconfig ./tsconfig.json",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "@sveltejs/vite-plugin-svelte": "latest",
+    "@tailwindcss/vite": "latest",
+    "katex": "latest",
+    "svelte": "latest",
+    "tailwindcss": "latest"
+  },
+  "devDependencies": {
+    "@tsconfig/svelte": "latest",
+    "@types/katex": "latest",
+    "@types/node": "latest",
+    "shadcn-svelte": "latest",
+    "svelte-check": "latest",
+    "typescript": "latest",
+    "vite": "latest"
+  }
+}

@@ -1,12 +1,9 @@
-use crate::{
-    Sort::*,
-    syntax::{Formula, Id, Sort, Term},
-};
+use crate::syntax::{Formula, Id, Sort, Sort::*, Term};
 use maplit::hashset;
 use std::{collections::HashSet, fmt};
 
 impl Term {
-    /// `Term` を文字列に変換する。
+    /// `Term` を LaTeX 文字列に変換する。
     fn to_text(&self, stack: &[Id]) -> String {
         use Term::*;
         match self {
@@ -24,7 +21,7 @@ impl Term {
         }
     }
 
-    /// `Term` の ID を再帰的に集める。
+    /// `Term` に出現する ID を集める。
     fn ids(&self, out: &mut HashSet<Id>) {
         use Term::*;
         match self {
@@ -43,7 +40,7 @@ impl Term {
 }
 
 impl Formula {
-    /// `Formula` を文字列に変換する。
+    /// `Formula` を LaTeX 文字列に変換する。
     fn to_text(&self, stack: &mut Vec<Id>, used: &mut HashSet<Id>) -> String {
         use Formula::*;
         match self {
@@ -104,7 +101,7 @@ impl Formula {
         }
     }
 
-    /// `Formula` の ID を再帰的に集める。
+    /// `Formula` に出現する ID を集める。
     fn ids(&self, used: &mut HashSet<Id>) {
         use Formula::*;
         match self {
@@ -135,7 +132,7 @@ impl fmt::Display for Sort {
             Obj => write!(f, r"\mathbb{{V}}"),
             Nat => write!(f, r"\mathbb{{N}}"),
             Int => write!(f, r"\mathbb{{Z}}"),
-            Rat => write!(f, r"\mathbb{{R}}"),
+            Rat => write!(f, r"\mathbb{{Q}}"),
         }
     }
 }

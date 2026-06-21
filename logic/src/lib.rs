@@ -1,7 +1,31 @@
-pub mod display;
-pub mod open;
-pub mod proof;
-pub mod syntax;
+mod display;
+mod game;
+mod open;
+mod parser;
+mod proof;
+mod syntax;
+mod tactic;
 
-pub use proof::*;
-pub use syntax::*;
+pub use game::{
+    App,
+    AppView,
+    ArgumentOptionView,
+    Example,
+    ExampleList,
+    FormulaView,
+    Game,
+    GoalNavView,
+    GoalPanelView,
+    HavePanelView,
+    HomeView,
+    HypothesisView,
+    MessageView,
+    ProofView,
+    SelectionView,
+    TacticButtonView,
+    TacticCommandTemplateView,
+    TacticPanelView,
+    TacticTextInputView,
+    ToolbarView,
+    examples,
+};

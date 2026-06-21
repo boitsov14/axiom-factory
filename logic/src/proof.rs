@@ -1,4 +1,4 @@
-use crate::syntax::{Formula, Id, Sort};
+use crate::syntax::Formula;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Goal {

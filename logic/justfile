@@ -93,7 +93,9 @@ machete:
 # Build
 ###################################
 
-# Todo
+# Build
+build:
+    wasm-pack build --target web --out-dir ../web/src/wasm
 
 ###################################
 # Utils
