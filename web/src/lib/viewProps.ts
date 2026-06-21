@@ -1,5 +1,5 @@
 import type { AppControls } from "@/lib/appClient";
-import type { FormulaView, HomeView, MessageView, ProofView } from "@/wasm/logic";
+import type { App, FormulaView, HomeView, MessageView, ProofView } from "@/wasm/logic";
 
 export interface FormulaProps {
   formula: FormulaView;
@@ -17,6 +17,7 @@ export interface HomeScreenProps {
 }
 
 export interface ProofScreenProps {
+  app: App;
   proof: ProofView;
   message: MessageView;
   controls: AppControls;

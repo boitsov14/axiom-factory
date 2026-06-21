@@ -71,8 +71,15 @@ pub struct ProofView {
     #[tsify(optional)]
     pub goal: Option<GoalPanelView>,
     pub selected: SelectionView,
-    pub tactics_panel: TacticPanelView,
-    pub have_panel: HavePanelView,
+    pub action_title: String,
+    pub action_hint: String,
+    pub no_target_tactics_text: String,
+    pub no_hypothesis_tactics_text: String,
+    pub have_title: String,
+    pub have_hint: String,
+    pub have_placeholder: String,
+    pub have_add_label: String,
+    pub have_unavailable_text: String,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, Tsify)]
@@ -133,87 +140,6 @@ pub struct SelectionView {
     #[serde(skip_serializing_if = "Option::is_none")]
     #[tsify(optional)]
     pub hypothesis_index: Option<usize>,
-}
-
-#[derive(Clone, Debug, Serialize, Deserialize, Tsify)]
-#[tsify(into_wasm_abi)]
-pub struct TacticPanelView {
-    pub title: String,
-    pub hint: String,
-    pub empty_text: String,
-    pub tactics: Vec<TacticButtonView>,
-}
-
-#[derive(Clone, Debug, Serialize, Deserialize, Tsify)]
-#[tsify(into_wasm_abi)]
-pub struct HavePanelView {
-    pub title: String,
-    pub hint: String,
-    pub placeholder: String,
-    pub add_label: String,
-    pub unavailable_text: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    #[tsify(optional)]
-    pub tactic: Option<TacticButtonView>,
-}
-
-#[derive(Clone, Debug, Serialize, Deserialize, Tsify)]
-#[tsify(into_wasm_abi)]
-pub struct TacticButtonView {
-    pub label: String,
-    pub description: String,
-    pub apply_label: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    #[tsify(optional)]
-    pub command: Option<TacticCommandTemplateView>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    #[tsify(optional)]
-    pub text_input: Option<TacticTextInputView>,
-    pub argument_options: Vec<ArgumentOptionView>,
-}
-
-#[derive(Clone, Debug, Serialize, Deserialize, Tsify)]
-#[tsify(into_wasm_abi)]
-pub struct TacticTextInputView {
-    pub placeholder: String,
-}
-
-#[derive(Clone, Debug, Serialize, Deserialize, Tsify)]
-#[tsify(into_wasm_abi)]
-pub struct ArgumentOptionView {
-    pub label: String,
-    pub formula: FormulaView,
-    pub command: TacticCommandTemplateView,
-}
-
-#[derive(Clone, Debug, Serialize, Deserialize, Tsify)]
-#[serde(tag = "type", rename_all = "PascalCase")]
-#[tsify(into_wasm_abi)]
-pub enum TacticCommandTemplateView {
-    Intro,
-    Assumption {
-        hypothesis_index: usize,
-    },
-    Apply {
-        hypothesis_index: usize,
-    },
-    Constructor,
-    Left,
-    Right,
-    Cases {
-        hypothesis_index: usize,
-    },
-    Exists,
-    SpecializeTerm {
-        hypothesis_index: usize,
-    },
-    SpecializeHypothesis {
-        hypothesis_index: usize,
-        argument_index: usize,
-    },
-    Have,
-    Exfalso,
-    ByContra,
 }
 
 #[wasm_bindgen]
@@ -359,10 +285,11 @@ impl App {
         hypothesis_index: usize,
         argument_index: usize,
     ) -> AppView {
-        self.state.apply_tactic(Tactic::Specialize {
-            hyp: hypothesis_index,
-            arg: Arg::Hyp(argument_index),
-        });
+        self.state
+            .apply_tactic(Tactic::Specialize {
+                hyp: hypothesis_index,
+                arg: Arg::Hyp(argument_index),
+            });
         self.view()
     }
 
@@ -379,6 +306,380 @@ impl App {
     pub fn apply_by_contra(&mut self) -> AppView {
         self.state.apply_tactic(Tactic::ByContra);
         self.view()
+    }
+}
+
+
+impl App {
+    fn current_goal(&self) -> Option<&Goal> {
+        match &self.state.screen {
+            Screen::Home => None,
+            Screen::Proof(proof) => proof.current_goal(),
+        }
+    }
+
+    fn current_hypothesis(&self, hypothesis_index: usize) -> Option<(&Goal, &Formula)> {
+        let goal = self.current_goal()?;
+        let hypothesis = goal.hypotheses.get(hypothesis_index)?;
+        Some((goal, hypothesis))
+    }
+
+    fn apply_tactic_and_view(&mut self, tactic: Tactic) -> AppView {
+        self.state.apply_tactic(tactic);
+        self.view()
+    }
+
+    fn apply_exists_and_view(&mut self, term: &str) -> AppView {
+        self.state.apply_exists(term);
+        self.view()
+    }
+
+    fn apply_specialize_with_term_and_view(&mut self, hypothesis_index: usize, term: &str) -> AppView {
+        self.state
+            .apply_specialize_with_term(hypothesis_index, term);
+        self.view()
+    }
+
+    fn apply_have_and_view(&mut self, formula: &str) -> AppView {
+        self.state.apply_have(formula);
+        self.view()
+    }
+}
+
+#[wasm_bindgen]
+pub struct IntroTactic;
+
+#[wasm_bindgen]
+impl IntroTactic {
+    pub fn label() -> String {
+        "Intro".into()
+    }
+
+    pub fn description(_app: &App) -> String {
+        "Introduce an implication, universal quantifier, or negation.".into()
+    }
+
+    pub fn is_enabled(app: &App) -> bool {
+        app.current_goal().is_some_and(|goal| {
+            matches!(&goal.target, To(..) | All { .. } | Not(_))
+        })
+    }
+
+    pub fn apply(app: &mut App) -> AppView {
+        app.apply_tactic_and_view(Tactic::Intro)
+    }
+}
+
+#[wasm_bindgen]
+pub struct AssumptionTactic;
+
+#[wasm_bindgen]
+impl AssumptionTactic {
+    pub fn label() -> String {
+        "Assumption".into()
+    }
+
+    pub fn description(_app: &App, _hypothesis_index: usize) -> String {
+        "Close the goal with this matching hypothesis.".into()
+    }
+
+    pub fn is_enabled(app: &App, hypothesis_index: usize) -> bool {
+        app.current_hypothesis(hypothesis_index)
+            .is_some_and(|(goal, hypothesis)| hypothesis == &goal.target)
+    }
+
+    pub fn apply(app: &mut App, hypothesis_index: usize) -> AppView {
+        app.apply_tactic_and_view(Tactic::Assumption {
+            hyp: hypothesis_index,
+        })
+    }
+}
+
+#[wasm_bindgen]
+pub struct ApplyTactic;
+
+#[wasm_bindgen]
+impl ApplyTactic {
+    pub fn label() -> String {
+        "Apply".into()
+    }
+
+    pub fn description(_app: &App, _hypothesis_index: usize) -> String {
+        "Apply this implication, negation, or equivalence hypothesis to the target.".into()
+    }
+
+    pub fn is_enabled(app: &App, hypothesis_index: usize) -> bool {
+        app.current_hypothesis(hypothesis_index)
+            .is_some_and(|(goal, hypothesis)| can_apply(hypothesis, &goal.target))
+    }
+
+    pub fn apply(app: &mut App, hypothesis_index: usize) -> AppView {
+        app.apply_tactic_and_view(Tactic::Apply {
+            hyp: hypothesis_index,
+        })
+    }
+}
+
+#[wasm_bindgen]
+pub struct ConstructorTactic;
+
+#[wasm_bindgen]
+impl ConstructorTactic {
+    pub fn label() -> String {
+        "Constructor".into()
+    }
+
+    pub fn description(_app: &App) -> String {
+        "Split a conjunction or equivalence target into subgoals.".into()
+    }
+
+    pub fn is_enabled(app: &App) -> bool {
+        app.current_goal()
+            .is_some_and(|goal| matches!(&goal.target, And(..) | Iff(..)))
+    }
+
+    pub fn apply(app: &mut App) -> AppView {
+        app.apply_tactic_and_view(Tactic::Constructor)
+    }
+}
+
+#[wasm_bindgen]
+pub struct LeftTactic;
+
+#[wasm_bindgen]
+impl LeftTactic {
+    pub fn label() -> String {
+        "Left".into()
+    }
+
+    pub fn description(_app: &App) -> String {
+        "Prove the left side of a disjunction target.".into()
+    }
+
+    pub fn is_enabled(app: &App) -> bool {
+        app.current_goal()
+            .is_some_and(|goal| matches!(&goal.target, Or(..)))
+    }
+
+    pub fn apply(app: &mut App) -> AppView {
+        app.apply_tactic_and_view(Tactic::Left)
+    }
+}
+
+#[wasm_bindgen]
+pub struct RightTactic;
+
+#[wasm_bindgen]
+impl RightTactic {
+    pub fn label() -> String {
+        "Right".into()
+    }
+
+    pub fn description(_app: &App) -> String {
+        "Prove the right side of a disjunction target.".into()
+    }
+
+    pub fn is_enabled(app: &App) -> bool {
+        app.current_goal()
+            .is_some_and(|goal| matches!(&goal.target, Or(..)))
+    }
+
+    pub fn apply(app: &mut App) -> AppView {
+        app.apply_tactic_and_view(Tactic::Right)
+    }
+}
+
+#[wasm_bindgen]
+pub struct CasesTactic;
+
+#[wasm_bindgen]
+impl CasesTactic {
+    pub fn label() -> String {
+        "Cases".into()
+    }
+
+    pub fn description(_app: &App, _hypothesis_index: usize) -> String {
+        "Split this hypothesis or eliminate falsehood.".into()
+    }
+
+    pub fn is_enabled(app: &App, hypothesis_index: usize) -> bool {
+        app.current_hypothesis(hypothesis_index).is_some_and(|(_, hypothesis)| {
+            matches!(hypothesis, And(..) | Or(..) | Iff(..) | Ex { .. } | False)
+        })
+    }
+
+    pub fn apply(app: &mut App, hypothesis_index: usize) -> AppView {
+        app.apply_tactic_and_view(Tactic::Cases {
+            hyp: hypothesis_index,
+        })
+    }
+}
+
+#[wasm_bindgen]
+pub struct ExistsTactic;
+
+#[wasm_bindgen]
+impl ExistsTactic {
+    pub fn label() -> String {
+        "Exists".into()
+    }
+
+    pub fn description(_app: &App) -> String {
+        "Provide a witness for the existential target.".into()
+    }
+
+    pub fn is_available(app: &App) -> bool {
+        app.current_goal()
+            .is_some_and(|goal| matches!(&goal.target, Ex { .. }))
+    }
+
+    pub fn can_apply(app: &App, term: &str) -> bool {
+        Self::is_available(app) && parse_term_string(term).is_ok()
+    }
+
+    pub fn apply(app: &mut App, term: &str) -> AppView {
+        app.apply_exists_and_view(term)
+    }
+}
+
+#[wasm_bindgen]
+pub struct SpecializeTermTactic;
+
+#[wasm_bindgen]
+impl SpecializeTermTactic {
+    pub fn label() -> String {
+        "Specialize".into()
+    }
+
+    pub fn description(_app: &App, _hypothesis_index: usize) -> String {
+        "Instantiate this universal hypothesis with a term.".into()
+    }
+
+    pub fn is_available(app: &App, hypothesis_index: usize) -> bool {
+        app.current_hypothesis(hypothesis_index)
+            .is_some_and(|(_, hypothesis)| matches!(hypothesis, All { .. }))
+    }
+
+    pub fn can_apply(app: &App, hypothesis_index: usize, term: &str) -> bool {
+        Self::is_available(app, hypothesis_index) && parse_term_string(term).is_ok()
+    }
+
+    pub fn apply(app: &mut App, hypothesis_index: usize, term: &str) -> AppView {
+        app.apply_specialize_with_term_and_view(hypothesis_index, term)
+    }
+}
+
+#[wasm_bindgen]
+pub struct SpecializeHypothesisTactic;
+
+#[wasm_bindgen]
+impl SpecializeHypothesisTactic {
+    pub fn label() -> String {
+        "Specialize".into()
+    }
+
+    pub fn description(_app: &App, _hypothesis_index: usize, argument_index: usize) -> String {
+        format!("Instantiate this implication using hypothesis {}.", argument_index + 1)
+    }
+
+    pub fn is_enabled(app: &App, hypothesis_index: usize, argument_index: usize) -> bool {
+        let Some((goal, hypothesis)) = app.current_hypothesis(hypothesis_index) else {
+            return false;
+        };
+        let To(p, _) = hypothesis else {
+            return false;
+        };
+        goal.hypotheses
+            .get(argument_index)
+            .is_some_and(|argument| argument == p.as_ref())
+    }
+
+    pub fn has_options(app: &App, hypothesis_index: usize) -> bool {
+        app.current_goal().is_some_and(|goal| {
+            goal.hypotheses
+                .iter()
+                .enumerate()
+                .any(|(argument_index, _)| Self::is_enabled(app, hypothesis_index, argument_index))
+        })
+    }
+
+    pub fn apply(app: &mut App, hypothesis_index: usize, argument_index: usize) -> AppView {
+        app.apply_tactic_and_view(Tactic::Specialize {
+            hyp: hypothesis_index,
+            arg: Arg::Hyp(argument_index),
+        })
+    }
+}
+
+#[wasm_bindgen]
+pub struct HaveTactic;
+
+#[wasm_bindgen]
+impl HaveTactic {
+    pub fn label() -> String {
+        "Have".into()
+    }
+
+    pub fn description(_app: &App) -> String {
+        "Create a separate subgoal and add it as a later hypothesis.".into()
+    }
+
+    pub fn is_available(app: &App) -> bool {
+        app.current_goal().is_some()
+    }
+
+    pub fn can_apply(app: &App, formula: &str) -> bool {
+        Self::is_available(app) && parse_formula_string(formula).is_ok()
+    }
+
+    pub fn apply(app: &mut App, formula: &str) -> AppView {
+        app.apply_have_and_view(formula)
+    }
+}
+
+#[wasm_bindgen]
+pub struct ExfalsoTactic;
+
+#[wasm_bindgen]
+impl ExfalsoTactic {
+    pub fn label() -> String {
+        "Exfalso".into()
+    }
+
+    pub fn description(_app: &App) -> String {
+        "Reduce the current target to False.".into()
+    }
+
+    pub fn is_enabled(app: &App) -> bool {
+        app.current_goal()
+            .is_some_and(|goal| !matches!(&goal.target, False))
+    }
+
+    pub fn apply(app: &mut App) -> AppView {
+        app.apply_tactic_and_view(Tactic::Exfalso)
+    }
+}
+
+#[wasm_bindgen]
+pub struct ByContraTactic;
+
+#[wasm_bindgen]
+impl ByContraTactic {
+    pub fn label() -> String {
+        "By Contra".into()
+    }
+
+    pub fn description(_app: &App) -> String {
+        "Prove the target by contradiction.".into()
+    }
+
+    pub fn is_enabled(app: &App) -> bool {
+        app.current_goal()
+            .is_some_and(|goal| !matches!(&goal.target, False))
+    }
+
+    pub fn apply(app: &mut App) -> AppView {
+        app.apply_tactic_and_view(Tactic::ByContra)
     }
 }
 
@@ -564,10 +865,11 @@ impl Game {
         hypothesis_index: usize,
         argument_index: usize,
     ) -> ProofView {
-        self.state.apply_tactic(Tactic::Specialize {
-            hyp: hypothesis_index,
-            arg: Arg::Hyp(argument_index),
-        });
+        self.state
+            .apply_tactic(Tactic::Specialize {
+                hyp: hypothesis_index,
+                arg: Arg::Hyp(argument_index),
+            });
         self.proof_view()
     }
 
@@ -774,8 +1076,15 @@ impl State {
             goal_nav: self.goal_nav_view(),
             goal: self.current_goal().map(|goal| self.goal_panel_view(goal)),
             selected: self.selection_view(),
-            tactics_panel: self.tactics_panel_view(),
-            have_panel: self.have_panel_view(),
+            action_title: self.selection_view().label,
+            action_hint: "Tactics are Rust methods. This panel only calls applicable static tactic APIs.".into(),
+            no_target_tactics_text: "No applicable target tactics.".into(),
+            no_hypothesis_tactics_text: "No applicable tactics for the selected hypothesis.".into(),
+            have_title: "Have".into(),
+            have_hint: "Introduce a separate intermediate claim.".into(),
+            have_placeholder: "formula".into(),
+            have_add_label: "Add".into(),
+            have_unavailable_text: "Have is not available.".into(),
         }
     }
 
@@ -834,42 +1143,6 @@ impl State {
                 is_target: false,
                 hypothesis_index: Some(index),
             },
-        }
-    }
-
-    fn tactics_panel_view(&self) -> TacticPanelView {
-        let tactics = self.selected_tactics();
-        TacticPanelView {
-            title: self.selection_view().label,
-            hint: "These actions apply to the selected formula.".into(),
-            empty_text: if self.goals.is_empty() {
-                "No tactics needed.".into()
-            } else {
-                "No applicable tactics for this selection.".into()
-            },
-            tactics,
-        }
-    }
-
-    fn have_panel_view(&self) -> HavePanelView {
-        HavePanelView {
-            title: "Have".into(),
-            hint: "Introduce a separate intermediate claim.".into(),
-            placeholder: "formula".into(),
-            add_label: "Add".into(),
-            unavailable_text: "Have is not available.".into(),
-            tactic: (!self.goals.is_empty())
-                .then(|| text_tactic_button(TacticCommandTemplateView::Have, "formula")),
-        }
-    }
-
-    fn selected_tactics(&self) -> Vec<TacticButtonView> {
-        let Some(goal) = self.current_goal() else {
-            return vec![];
-        };
-        match self.selected {
-            Selection::Target => target_tactics(goal),
-            Selection::Hypothesis(index) => hypothesis_tactics(goal, index),
         }
     }
 
@@ -1038,233 +1311,14 @@ impl Tactic {
     }
 }
 
-/// ターゲットに直接適用できるタクティクを返す。
-fn target_tactics(goal: &Goal) -> Vec<TacticButtonView> {
-    let mut tactics = vec![];
-    match &goal.target {
-        To(..) | All { .. } | Not(_) => {
-            tactics.push(tactic_button(TacticCommandTemplateView::Intro));
-        }
-        And(..) | Iff(..) => {
-            tactics.push(tactic_button(TacticCommandTemplateView::Constructor));
-        }
-        Or(..) => {
-            tactics.push(tactic_button(TacticCommandTemplateView::Left));
-            tactics.push(tactic_button(TacticCommandTemplateView::Right));
-        }
-        Ex { .. } => {
-            tactics.push(text_tactic_button(
-                TacticCommandTemplateView::Exists,
-                "term",
-            ));
-        }
-        False | Atom(..) | Eq(..) => {}
-    }
-
-    if goal.target != False {
-        tactics.push(tactic_button(TacticCommandTemplateView::Exfalso));
-        tactics.push(tactic_button(TacticCommandTemplateView::ByContra));
-    }
-
-    tactics
-}
-
-/// 選択された仮定に適用できるタクティクを返す。
-fn hypothesis_tactics(goal: &Goal, hyp: usize) -> Vec<TacticButtonView> {
-    let Some(formula) = goal.hypotheses.get(hyp) else {
-        return vec![];
-    };
-
-    let mut tactics = vec![];
-    if formula == &goal.target {
-        tactics.push(tactic_button(TacticCommandTemplateView::Assumption {
-            hypothesis_index: hyp,
-        }));
-    }
-    if can_apply(formula, &goal.target) {
-        tactics.push(tactic_button(TacticCommandTemplateView::Apply {
-            hypothesis_index: hyp,
-        }));
-    }
-    match formula {
-        And(..) | Or(..) | Iff(..) | Ex { .. } | False => {
-            tactics.push(tactic_button(TacticCommandTemplateView::Cases {
-                hypothesis_index: hyp,
-            }));
-        }
-        All { .. } => {
-            tactics.push(text_tactic_button(
-                TacticCommandTemplateView::SpecializeTerm {
-                    hypothesis_index: hyp,
-                },
-                "term",
-            ));
-        }
-        To(p, _) => {
-            let argument_options = matching_hypotheses(goal, p)
-                .into_iter()
-                .filter_map(|index| {
-                    goal.hypotheses
-                        .get(index)
-                        .map(|formula| ArgumentOptionView {
-                            label: format!("Use hypothesis {}", index + 1),
-                            formula: formula_view(formula),
-                            command: TacticCommandTemplateView::SpecializeHypothesis {
-                                hypothesis_index: hyp,
-                                argument_index: index,
-                            },
-                        })
-                })
-                .collect::<Vec<_>>();
-            if !argument_options.is_empty() {
-                tactics.push(argument_tactic_button(
-                    TacticCommandTemplateView::SpecializeHypothesis {
-                        hypothesis_index: hyp,
-                        argument_index: 0,
-                    },
-                    argument_options,
-                ));
-            }
-        }
-        Atom(..) | Eq(..) | Not(_) => {}
-    }
-
-    tactics
-}
-
 /// 選択された仮定が `apply` 可能かを返す。
 fn can_apply(formula: &Formula, target: &Formula) -> bool {
     match formula {
         To(_, q) | Iff(_, q) if q.as_ref() == target => true,
         Iff(p, _) if p.as_ref() == target => true,
         Not(_) if target == &False => true,
-        False
-        | Atom(..)
-        | Eq(..)
-        | Not(_)
-        | And(..)
-        | Or(..)
-        | All { .. }
-        | Ex { .. }
-        | To(..)
+        False | Atom(..) | Eq(..) | Not(_) | And(..) | Or(..) | All { .. } | Ex { .. } | To(..)
         | Iff(..) => false,
-    }
-}
-
-/// 指定式に一致する仮定番号を返す。
-fn matching_hypotheses(goal: &Goal, formula: &Formula) -> Vec<usize> {
-    goal.hypotheses
-        .iter()
-        .enumerate()
-        .filter_map(|(i, p)| (p == formula).then_some(i))
-        .collect()
-}
-
-/// タクティク候補を表示用に作る。
-fn tactic_button(command: TacticCommandTemplateView) -> TacticButtonView {
-    let label = tactic_label(&command);
-    TacticButtonView {
-        label: label.into(),
-        description: tactic_description(&command).into(),
-        apply_label: tactic_apply_label(&command).into(),
-        command: Some(command),
-        text_input: None,
-        argument_options: vec![],
-    }
-}
-
-fn text_tactic_button(command: TacticCommandTemplateView, placeholder: &str) -> TacticButtonView {
-    let label = tactic_label(&command);
-    TacticButtonView {
-        label: label.into(),
-        description: tactic_description(&command).into(),
-        apply_label: tactic_apply_label(&command).into(),
-        command: Some(command),
-        text_input: Some(TacticTextInputView {
-            placeholder: placeholder.into(),
-        }),
-        argument_options: vec![],
-    }
-}
-
-fn argument_tactic_button(
-    command: TacticCommandTemplateView,
-    argument_options: Vec<ArgumentOptionView>,
-) -> TacticButtonView {
-    let label = tactic_label(&command);
-    TacticButtonView {
-        label: label.into(),
-        description: tactic_description(&command).into(),
-        apply_label: tactic_apply_label(&command).into(),
-        command: None,
-        text_input: None,
-        argument_options,
-    }
-}
-
-fn tactic_apply_label(command: &TacticCommandTemplateView) -> &'static str {
-    match command {
-        TacticCommandTemplateView::Have => "Add",
-        TacticCommandTemplateView::Intro
-        | TacticCommandTemplateView::Assumption { .. }
-        | TacticCommandTemplateView::Apply { .. }
-        | TacticCommandTemplateView::Constructor
-        | TacticCommandTemplateView::Left
-        | TacticCommandTemplateView::Right
-        | TacticCommandTemplateView::Cases { .. }
-        | TacticCommandTemplateView::Exists
-        | TacticCommandTemplateView::SpecializeTerm { .. }
-        | TacticCommandTemplateView::SpecializeHypothesis { .. }
-        | TacticCommandTemplateView::Exfalso
-        | TacticCommandTemplateView::ByContra => "Apply",
-    }
-}
-
-fn tactic_label(command: &TacticCommandTemplateView) -> &'static str {
-    match command {
-        TacticCommandTemplateView::Intro => "Intro",
-        TacticCommandTemplateView::Assumption { .. } => "Assumption",
-        TacticCommandTemplateView::Apply { .. } => "Apply",
-        TacticCommandTemplateView::Constructor => "Constructor",
-        TacticCommandTemplateView::Left => "Left",
-        TacticCommandTemplateView::Right => "Right",
-        TacticCommandTemplateView::Cases { .. } => "Cases",
-        TacticCommandTemplateView::Exists => "Exists",
-        TacticCommandTemplateView::SpecializeTerm { .. }
-        | TacticCommandTemplateView::SpecializeHypothesis { .. } => "Specialize",
-        TacticCommandTemplateView::Have => "Have",
-        TacticCommandTemplateView::Exfalso => "Exfalso",
-        TacticCommandTemplateView::ByContra => "By Contra",
-    }
-}
-
-fn tactic_description(command: &TacticCommandTemplateView) -> &'static str {
-    match command {
-        TacticCommandTemplateView::Intro => {
-            "Introduce an implication, universal quantifier, or negation."
-        }
-        TacticCommandTemplateView::Assumption { .. } => {
-            "Close the goal with this matching hypothesis."
-        }
-        TacticCommandTemplateView::Apply { .. } => {
-            "Apply this implication, negation, or equivalence hypothesis to the target."
-        }
-        TacticCommandTemplateView::Constructor => {
-            "Split a conjunction or equivalence target into subgoals."
-        }
-        TacticCommandTemplateView::Left => "Prove the left side of a disjunction target.",
-        TacticCommandTemplateView::Right => "Prove the right side of a disjunction target.",
-        TacticCommandTemplateView::Cases { .. } => "Split this hypothesis or eliminate falsehood.",
-        TacticCommandTemplateView::Exists => "Provide a witness for the existential target.",
-        TacticCommandTemplateView::SpecializeTerm { .. }
-        | TacticCommandTemplateView::SpecializeHypothesis { .. } => {
-            "Instantiate this universal or implication hypothesis."
-        }
-        TacticCommandTemplateView::Have => {
-            "Create a separate subgoal and add it as a later hypothesis."
-        }
-        TacticCommandTemplateView::Exfalso => "Reduce the current target to False.",
-        TacticCommandTemplateView::ByContra => "Prove the target by contradiction.",
     }
 }
 

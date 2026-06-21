@@ -5,6 +5,7 @@
   import HomeScreen from "@/screens/HomeScreen.svelte";
   import ProofScreen from "@/screens/ProofScreen.svelte";
 
+  let app = $state<App | null>(null);
   let controls = $state<AppControls | null>(null);
   let view = $state<AppView | null>(null);
   let startupError = $state("");
@@ -12,9 +13,10 @@
   onMount(async () => {
     try {
       await init();
-      const app = new App();
-      view = app.view();
-      controls = createAppControls(app, (next) => {
+      const nextApp = new App();
+      app = nextApp;
+      view = nextApp.view();
+      controls = createAppControls(nextApp, (next) => {
         view = next;
       });
     } catch (error) {
@@ -39,6 +41,6 @@
   </main>
 {:else if view.proof == null}
   <HomeScreen home={view.home} message={view.message} {controls} />
-{:else if controls !== null && view.proof != null}
-  <ProofScreen proof={view.proof} message={view.message} {controls} />
+{:else if controls !== null && app !== null}
+  <ProofScreen {app} proof={view.proof} message={view.message} {controls} />
 {/if}
