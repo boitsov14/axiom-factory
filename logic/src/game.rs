@@ -285,11 +285,10 @@ impl App {
         hypothesis_index: usize,
         argument_index: usize,
     ) -> AppView {
-        self.state
-            .apply_tactic(Tactic::Specialize {
-                hyp: hypothesis_index,
-                arg: Arg::Hyp(argument_index),
-            });
+        self.state.apply_tactic(Tactic::Specialize {
+            hyp: hypothesis_index,
+            arg: Arg::Hyp(argument_index),
+        });
         self.view()
     }
 
@@ -308,7 +307,6 @@ impl App {
         self.view()
     }
 }
-
 
 impl App {
     fn current_goal(&self) -> Option<&Goal> {
@@ -334,7 +332,11 @@ impl App {
         self.view()
     }
 
-    fn apply_specialize_with_term_and_view(&mut self, hypothesis_index: usize, term: &str) -> AppView {
+    fn apply_specialize_with_term_and_view(
+        &mut self,
+        hypothesis_index: usize,
+        term: &str,
+    ) -> AppView {
         self.state
             .apply_specialize_with_term(hypothesis_index, term);
         self.view()
@@ -360,9 +362,8 @@ impl IntroTactic {
     }
 
     pub fn is_enabled(app: &App) -> bool {
-        app.current_goal().is_some_and(|goal| {
-            matches!(&goal.target, To(..) | All { .. } | Not(_))
-        })
+        app.current_goal()
+            .is_some_and(|goal| matches!(&goal.target, To(..) | All { .. } | Not(_)))
     }
 
     pub fn apply(app: &mut App) -> AppView {
@@ -503,9 +504,10 @@ impl CasesTactic {
     }
 
     pub fn is_enabled(app: &App, hypothesis_index: usize) -> bool {
-        app.current_hypothesis(hypothesis_index).is_some_and(|(_, hypothesis)| {
-            matches!(hypothesis, And(..) | Or(..) | Iff(..) | Ex { .. } | False)
-        })
+        app.current_hypothesis(hypothesis_index)
+            .is_some_and(|(_, hypothesis)| {
+                matches!(hypothesis, And(..) | Or(..) | Iff(..) | Ex { .. } | False)
+            })
     }
 
     pub fn apply(app: &mut App, hypothesis_index: usize) -> AppView {
@@ -579,7 +581,10 @@ impl SpecializeHypothesisTactic {
     }
 
     pub fn description(_app: &App, _hypothesis_index: usize, argument_index: usize) -> String {
-        format!("Instantiate this implication using hypothesis {}.", argument_index + 1)
+        format!(
+            "Instantiate this implication using hypothesis {}.",
+            argument_index + 1
+        )
     }
 
     pub fn is_enabled(app: &App, hypothesis_index: usize, argument_index: usize) -> bool {
@@ -865,11 +870,10 @@ impl Game {
         hypothesis_index: usize,
         argument_index: usize,
     ) -> ProofView {
-        self.state
-            .apply_tactic(Tactic::Specialize {
-                hyp: hypothesis_index,
-                arg: Arg::Hyp(argument_index),
-            });
+        self.state.apply_tactic(Tactic::Specialize {
+            hyp: hypothesis_index,
+            arg: Arg::Hyp(argument_index),
+        });
         self.proof_view()
     }
 
@@ -908,7 +912,7 @@ pub fn examples() -> ExampleList {
             },
             Example {
                 title: "Universal instantiation".into(),
-                input: "all x, P(x) |- P(a)".into(),
+                input: "all x, P x |- P a".into(),
             },
         ],
     }
@@ -1077,7 +1081,9 @@ impl State {
             goal: self.current_goal().map(|goal| self.goal_panel_view(goal)),
             selected: self.selection_view(),
             action_title: self.selection_view().label,
-            action_hint: "Tactics are Rust methods. This panel only calls applicable static tactic APIs.".into(),
+            action_hint:
+                "Tactics are Rust methods. This panel only calls applicable static tactic APIs."
+                    .into(),
             no_target_tactics_text: "No applicable target tactics.".into(),
             no_hypothesis_tactics_text: "No applicable tactics for the selected hypothesis.".into(),
             have_title: "Have".into(),
@@ -1317,7 +1323,15 @@ fn can_apply(formula: &Formula, target: &Formula) -> bool {
         To(_, q) | Iff(_, q) if q.as_ref() == target => true,
         Iff(p, _) if p.as_ref() == target => true,
         Not(_) if target == &False => true,
-        False | Atom(..) | Eq(..) | Not(_) | And(..) | Or(..) | All { .. } | Ex { .. } | To(..)
+        False
+        | Atom(..)
+        | Eq(..)
+        | Not(_)
+        | And(..)
+        | Or(..)
+        | All { .. }
+        | Ex { .. }
+        | To(..)
         | Iff(..) => false,
     }
 }

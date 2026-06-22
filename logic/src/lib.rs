@@ -22,6 +22,7 @@ pub use game::{
     Game,
     GoalNavView,
     GoalPanelView,
+    HaveTactic,
     HomeView,
     HypothesisView,
     IntroTactic,
@@ -33,6 +34,5 @@ pub use game::{
     SpecializeHypothesisTactic,
     SpecializeTermTactic,
     ToolbarView,
-    HaveTactic,
     examples,
 };
