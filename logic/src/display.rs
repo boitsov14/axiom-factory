@@ -1,11 +1,10 @@
-use crate::syntax::{Formula, Id, Sort, Sort::*, Term};
+use crate::syntax::{Formula, Formula::*, Id, Sort, Sort::*, Term, Term::*};
 use maplit::hashset;
 use std::{collections::HashSet, fmt};
 
 impl Term {
     /// `Term` を LaTeX 文字列に変換する。
     fn to_text(&self, stack: &[Id]) -> String {
-        use Term::*;
         match self {
             Var(x) => x.clone(),
             Bound(i) => stack[stack.len() - 1 - *i].clone(),
@@ -15,7 +14,7 @@ impl Term {
                     .iter()
                     .map(|t| t.to_text(stack))
                     .collect::<Vec<_>>()
-                    .join(", ");
+                    .join(",");
                 format!("{f}({args})")
             }
         }
@@ -23,7 +22,6 @@ impl Term {
 
     /// `Term` に出現する ID を集める。
     fn ids(&self, out: &mut HashSet<Id>) {
-        use Term::*;
         match self {
             Var(x) => {
                 out.insert(x.clone());
@@ -39,113 +37,9 @@ impl Term {
     }
 }
 
-/// 連続する同じ種類の束縛子（∀ または ∃）を収集し、本体への参照を返す。
-fn collect_binders(formula: &Formula) -> (Vec<(bool, Vec<(Id, Sort)>)>, &Formula) {
-    let mut groups: Vec<(bool, Vec<(Id, Sort)>)> = Vec::new();
-    let mut current = formula;
-    loop {
-        match current {
-            Formula::All { v, sort, body } => {
-                match groups.last_mut() {
-                    Some(last) if last.0 => last.1.push((v.clone(), sort.clone())),
-                    _ => groups.push((true, vec![(v.clone(), sort.clone())])),
-                }
-                current = body;
-            }
-            Formula::Ex { v, sort, body } => {
-                match groups.last_mut() {
-                    Some(last) if !last.0 => last.1.push((v.clone(), sort.clone())),
-                    _ => groups.push((false, vec![(v.clone(), sort.clone())])),
-                }
-                current = body;
-            }
-            _ => break,
-        }
-    }
-    (groups, current)
-}
-
 impl Formula {
     /// `Formula` を LaTeX 文字列に変換する。
     fn to_text(&self, stack: &mut Vec<Id>, used: &mut HashSet<Id>) -> String {
-        use Formula::*;
-        match self {
-            All { .. } | Ex { .. } => {
-                let (groups, body) = collect_binders(self);
-                self.binders_to_text(&groups, body, stack, used)
-            }
-            // ...rest of the match
-            _ => self.base_to_text(stack, used),
-        }
-    }
-
-    /// 収集済みの束縛子グループを使って整形する。
-    fn binders_to_text(
-        &self,
-        groups: &[(bool, Vec<(Id, Sort)>)],
-        body: &Formula,
-        stack: &mut Vec<Id>,
-        used: &mut HashSet<Id>,
-    ) -> String {
-        // 各グループの変数に fresh な名前を付け、スタックに積む
-        let mut all_names: Vec<Vec<Id>> = Vec::new();
-        for (_, vars) in groups {
-            let mut names = Vec::new();
-            for (v, _) in vars {
-                let n = fresh(v, used);
-                names.push(n.clone());
-                used.insert(n.clone());
-                stack.push(n);
-            }
-            all_names.push(names);
-        }
-
-        let body_str = body.to_text(stack, used);
-
-        // スタックを戻す
-        for names in all_names.iter().rev() {
-            for _ in names {
-                stack.pop();
-            }
-        }
-
-        // 文字列を構築
-        let mut result = String::new();
-        for ((is_all, vars), names) in groups.iter().zip(all_names.iter()) {
-            let quant = if *is_all { r"\forall " } else { r"\exists " };
-            result.push_str(quant);
-
-            let all_obj = vars.iter().all(|(_, s)| *s == Obj);
-            let all_same_sort = vars.windows(2).all(|w| w[0].1 == w[1].1);
-
-            if all_obj {
-                result.push_str(&names.join(" "));
-            } else if all_same_sort {
-                let sort_str = format!("{}", vars[0].1);
-                result.push_str(&format!("({} : {sort_str})", names.join(" ")));
-            } else {
-                let parts: Vec<String> = vars
-                    .iter()
-                    .zip(names.iter())
-                    .map(|((_, s), n)| {
-                        if *s == Obj {
-                            n.clone()
-                        } else {
-                            let sort_str = format!("{s}");
-                            format!("({n} : {sort_str})")
-                        }
-                    })
-                    .collect();
-                result.push_str(&parts.join(" "));
-            }
-            result.push_str(", ");
-        }
-        result.push_str(&body_str);
-        result
-    }
-
-    fn base_to_text(&self, stack: &mut Vec<Id>, used: &mut HashSet<Id>) -> String {
-        use Formula::*;
         match self {
             False => r"\bot".into(),
             Atom(pred, args) if args.is_empty() => pred.clone(),
@@ -154,8 +48,8 @@ impl Formula {
                     .iter()
                     .map(|t| t.to_text(stack))
                     .collect::<Vec<_>>()
-                    .join(" ");
-                format!("{pred} {args}")
+                    .join(",");
+                format!("{pred}({args})")
             }
             Eq(s, t) => format!("({} = {})", s.to_text(stack), t.to_text(stack)),
             Not(p) => format!(r"\lnot {}", p.to_text(stack, used)),
@@ -179,13 +73,33 @@ impl Formula {
                 p.to_text(stack, used),
                 q.to_text(stack, used)
             ),
-            _ => unreachable!(),
+            All { v, sort, body } => {
+                let v = fresh(v, used);
+                used.insert(v.clone());
+                stack.push(v.clone());
+                let body = body.to_text(stack, used);
+                stack.pop();
+                match sort {
+                    Obj => format!(r"\forall {v} {body}"),
+                    _ => format!(r"\forall {v}:{sort} {body}"),
+                }
+            }
+            Ex { v, sort, body } => {
+                let v = fresh(v, used);
+                used.insert(v.clone());
+                stack.push(v.clone());
+                let body = body.to_text(stack, used);
+                stack.pop();
+                match sort {
+                    Obj => format!(r"\exists {v} {body}"),
+                    _ => format!(r"\exists {v}:{sort} {body}"),
+                }
+            }
         }
     }
 
     /// `Formula` に出現する ID を集める。
     fn ids(&self, used: &mut HashSet<Id>) {
-        use Formula::*;
         match self {
             False => {}
             Atom(pred, args) => {
