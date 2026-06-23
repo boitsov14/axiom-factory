@@ -41,7 +41,7 @@ fmt:
 # Lint code
 lint:
     just fmt
-    cargo +nightly clippy --all-targets --all-features
+    cargo +nightly clippy --all-targets --all-features --fix --allow-dirty
 
 # Lint code allowing dead_code warnings
 lint2:

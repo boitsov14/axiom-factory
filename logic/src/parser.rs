@@ -1,89 +1,48 @@
-use crate::{
-    parser::parser::{formula, sequent, term},
-    syntax::{Formula, Id, Term},
+use crate::syntax::{
+    Formula,
+    Formula::*,
+    Id,
+    Sort,
+    Sort::*,
+    Term,
+    Term::{Bound, Var},
 };
 use thiserror::Error;
 
+/// Parser Error
 #[derive(Error, Debug)]
 pub enum Error {
+    /// 括弧の数が一致しない
     #[error("Found {lp} left parentheses and {rp} right parentheses.")]
     Parentheses { lp: usize, rp: usize },
-    #[error("parse error at line {line}, column {column}: expected {expected}")]
+    /// Peg Error
+    #[error("
+ |
+ | {s}
+ | {}^___
+ |
+ = expected {}", " ".repeat(e.location.column - 1), e.expected)]
     Peg {
-        line: usize,
-        column: usize,
-        expected: String,
+        s: String,
+        e: peg::error::ParseError<peg::str::LineCol>,
     },
-    #[error("sequent must have exactly one target formula")]
-    TargetCount,
 }
 
-/// 項を構文解析する。
-///
-/// # Errors
-///
-/// 入力が項として構文解析できない場合、または括弧数が一致しない場合にエラーを返す。
+/// `Term` を Parse
 pub fn parse_term(s: &str) -> Result<Term, Error> {
-    let s = clean(s);
-    check_parentheses(&s)?;
-    term(&s).map_err(|e| Error::Peg {
-        line: e.location.line,
-        column: e.location.column,
-        expected: e.expected.to_string(),
-    })
+    check_parentheses(s)?;
+    parser::term(s).map_err(|e| Error::Peg { s: s.to_owned(), e })
 }
 
-/// 論理式を構文解析する。
-///
-/// # Errors
-///
-/// 入力が論理式として構文解析できない場合、または括弧数が一致しない場合にエラーを返す。
+/// `Formula` を Parse
 pub fn parse_formula(s: &str) -> Result<Formula, Error> {
-    let s = clean(s);
-    check_parentheses(&s)?;
-    let mut formula = formula(&s).map_err(|e| Error::Peg {
-        line: e.location.line,
-        column: e.location.column,
-        expected: e.expected.to_string(),
-    })?;
-    close_formula(&mut formula);
-    Ok(formula)
+    check_parentheses(s)?;
+    let mut fml = parser::formula(s).map_err(|e| Error::Peg { s: s.to_owned(), e })?;
+    close_formula(&mut fml);
+    Ok(fml)
 }
 
-/// シーケントを `Goal` 相当の組に構文解析する。
-///
-/// # Errors
-///
-/// 入力がシーケントとして構文解析できない場合、括弧数が一致しない場合、または結論が複数ある場合にエラーを返す。
-pub fn parse_goal(s: &str) -> Result<(Vec<Formula>, Formula), Error> {
-    let s = clean(s);
-    check_parentheses(&s)?;
-    let (mut hypotheses, targets) = sequent(&s).map_err(|e| Error::Peg {
-        line: e.location.line,
-        column: e.location.column,
-        expected: e.expected.to_string(),
-    })?;
-
-    for p in &mut hypotheses {
-        close_formula(p);
-    }
-
-    let mut target = match targets.len() {
-        0 => Formula::False,
-        1 => targets.into_iter().next().ok_or(Error::TargetCount)?,
-        _ => return Err(Error::TargetCount),
-    };
-    close_formula(&mut target);
-
-    Ok((hypotheses, target))
-}
-
-/// 入力文字列の空白を整理する。
-fn clean(s: &str) -> String {
-    s.split_whitespace().collect::<Vec<_>>().join(" ")
-}
-
-/// 括弧の数を確認する。
+/// 括弧の数が一致するか確認
 fn check_parentheses(s: &str) -> Result<(), Error> {
     let lp = s.chars().filter(|&c| c == '(').count();
     let rp = s.chars().filter(|&c| c == ')').count();
@@ -94,46 +53,15 @@ fn check_parentheses(s: &str) -> Result<(), Error> {
     }
 }
 
-/// 束縛変数名を de Bruijn index に変換する。
-fn close_formula(p: &mut Formula) {
-    close_formula_at(p, &mut vec![]);
-}
-
-/// 現在の束縛変数スタックに従って `Formula` を閉じる。
-fn close_formula_at(p: &mut Formula, stack: &mut Vec<Id>) {
-    match p {
-        Formula::False => {}
-        Formula::Atom(_, args) => {
-            for t in args {
-                close_term_at(t, stack);
-            }
-        }
-        Formula::Eq(s, t) => {
-            close_term_at(s, stack);
-            close_term_at(t, stack);
-        }
-        Formula::Not(q) => close_formula_at(q, stack),
-        Formula::And(q, r) | Formula::Or(q, r) | Formula::To(q, r) | Formula::Iff(q, r) => {
-            close_formula_at(q, stack);
-            close_formula_at(r, stack);
-        }
-        Formula::All { v, body, .. } | Formula::Ex { v, body, .. } => {
-            stack.push(v.clone());
-            close_formula_at(body, stack);
-            stack.pop();
-        }
-    }
-}
-
 /// 現在の束縛変数スタックに従って `Term` を閉じる。
 fn close_term_at(t: &mut Term, stack: &[Id]) {
     match t {
-        Term::Var(x) => {
+        Var(x) => {
             if let Some(i) = stack.iter().rev().position(|v| v == x) {
-                *t = Term::Bound(i);
+                *t = Bound(i);
             }
         }
-        Term::Bound(_) => {}
+        Bound(_) => {}
         Term::Fn(_, args) => {
             for u in args {
                 close_term_at(u, stack);
@@ -142,123 +70,132 @@ fn close_term_at(t: &mut Term, stack: &[Id]) {
     }
 }
 
-peg::parser!(grammar parser() for str {
-    use crate::syntax::{Formula, Id, Sort, Term};
+/// 束縛変数名を de Bruijn index に変換する。
+fn close_formula(fml: &mut Formula) {
+    close_formula_at(fml, &mut vec![]);
+}
 
+/// 現在の束縛変数スタックに従って `Formula` を閉じる。
+fn close_formula_at(fml: &mut Formula, stack: &mut Vec<Id>) {
+    match fml {
+        False => {}
+        Atom(_, args) => {
+            for t in args {
+                close_term_at(t, stack);
+            }
+        }
+        Eq(t, u) => {
+            close_term_at(t, stack);
+            close_term_at(u, stack);
+        }
+        Not(p) => close_formula_at(p, stack),
+        And(p, q) | Or(p, q) | To(p, q) | Iff(p, q) => {
+            close_formula_at(p, stack);
+            close_formula_at(q, stack);
+        }
+        All { v, body, .. } | Ex { v, body, .. } => {
+            stack.push(v.clone());
+            close_formula_at(body, stack);
+            stack.pop();
+        }
+    }
+}
+
+peg::parser!(grammar parser() for str {
+    /// `Term` を Parse
     pub rule term() -> Term = quiet!{
         f:$func_id() _ "(" _ ts:(term() ++ (_ "," _)) _ ")" { Term::Fn(f.into(), ts) } /
-        v:$var_id() { Term::Var(v.into()) } /
+        v:$var_id() { Var(v.into()) } /
         "(" _ t:term() _ ")" { t }
     } / expected!("term")
 
     rule atom() -> Formula =
-        p_true() { Formula::To(Box::new(Formula::False), Box::new(Formula::False)) } /
-        p_false() { Formula::False } /
-        s:term() _ eq() _ t:term() { Formula::Eq(s, t) } /
-        p:$pred_id() ts:(_ t:term() {t})* { Formula::Atom(p.into(), ts) }
+        p_false() { False } /
+        s:term() _ eq() _ t:term() { Eq(s, t) } /
+        p:$pred_id() _ "(" _ ts:(term() ++ (_ "," _)) _ ")" { Atom(p.into(), ts) } /
+        p:$pred_id() { Atom(p.into(), vec![]) }
 
+    /// 論理式を構文解析する。
+    ///
+    /// すべての演算子は右結合である。
+    ///
+    /// 優先順位: ¬, ∀, ∃ > ∧ > ∨ > → > ↔
     pub rule formula() -> Formula = precedence!{
-        all() _ vs:quant_vars() _ p:@ {
-            vs.into_iter().rev().fold(p, |p, (v, sort)| Formula::All { v, sort, body: Box::new(p) })
-        }
-        ex() _ vs:quant_vars() _ p:@ {
-            vs.into_iter().rev().fold(p, |p, (v, sort)| Formula::Ex { v, sort, body: Box::new(p) })
-        }
+        p:@ _ iff() _ q:(@) { Iff(Box::new(p), Box::new(q)) }
         --
-        p:@ _ iff() _ q:(@) { Formula::Iff(Box::new(p), Box::new(q)) }
+        p:@ _ to() _ q:(@) { To(Box::new(p), Box::new(q)) }
         --
-        p:@ _ to() _ q:(@) { Formula::To(Box::new(p), Box::new(q)) }
+        p:@ _ or() _ q:(@) { Or(Box::new(p), Box::new(q)) }
         --
-        p:@ _ or() _ q:(@) { Formula::Or(Box::new(p), Box::new(q)) }
+        p:@ _ and() _ q:(@) { And(Box::new(p), Box::new(q)) }
         --
-        p:@ _ and() _ q:(@) { Formula::And(Box::new(p), Box::new(q)) }
-        --
-        not() _ p:@ { Formula::Not(Box::new(p)) }
+        not() _ p:@ { Not(Box::new(p)) }
+        all() _ v:$var_id() _ ":" _ s:sort() _ p:@ { All { v: v.into(), sort: s, body: Box::new(p) } }
+        all() _ v:$var_id() _ p:@ { All { v: v.into(), sort: Obj, body: Box::new(p) } }
+        ex() _ v:$var_id() _ ":" _ s:sort() _ p:@ { Ex { v: v.into(), sort: s, body: Box::new(p) } }
+        ex() _ v:$var_id() _ p:@ { Ex { v: v.into(), sort: Obj, body: Box::new(p) } }
         --
         p:atom() { p }
         "(" _ p:formula() _ ")" { p }
     } / expected!("formula")
 
-    pub rule sequent() -> (Vec<Formula>, Vec<Formula>) =
-        hypotheses:(formula() ** (_ "," _)) _ turnstile() _ targets:(formula() ** (_ "," _)) {
-            (hypotheses, targets)
-        } /
-        p:formula() { (vec![], vec![p]) } /
-        expected!("sequent")
-
-    rule quant_vars() -> Vec<(Id, Sort)> =
-        gs:(quant_group() ++ (_)) _ "," { gs.into_iter().flatten().collect() } /
-        vs:($(bdd_var_id()) ++ (_)) _ "," { vs.into_iter().map(|v| (v.to_owned(), Sort::Obj)).collect() }
-
-    rule quant_group() -> Vec<(Id, Sort)> =
-        "(" _ vs:($(bdd_var_id()) ++ (_)) _ ":" _ s:sort() _ ")" {
-            vs.into_iter().map(|v| (v.to_owned(), s.clone())).collect()
-        }
-
     rule sort() -> Sort = quiet!{
-        "Obj" { Sort::Obj } /
-        "V" { Sort::Obj } /
-        "Nat" { Sort::Nat } /
-        "N" { Sort::Nat } /
-        r"\mathbb{N}" { Sort::Nat } /
-        "Int" { Sort::Int } /
-        "Z" { Sort::Int } /
-        r"\mathbb{Z}" { Sort::Int } /
-        "Rat" { Sort::Rat } /
-        "Q" { Sort::Rat } /
-        r"\mathbb{Q}" { Sort::Rat }
+        "Obj" { Obj } /
+        "V" { Obj } /
+        "Nat" { Nat } /
+        "N" { Nat } /
+        r"\mathbb{N}" { Nat } /
+        "Int" { Int } /
+        "Z" { Int } /
+        r"\mathbb{Z}" { Int } /
+        "Rat" { Rat } /
+        "Q" { Rat } /
+        r"\mathbb{Q}" { Rat }
     } / expected!("sort")
 
     rule alpha() = ['a'..='z' | 'A'..='Z']
     rule digit() = ['0'..='9' | '_' | '\'']
     rule id() = alpha() (alpha() / digit())*
     rule var_id() = id()
-    rule bdd_var_id() = alpha() digit()*
     rule func_id() = id()
-    rule pred_id() = quiet!{ id() } / expected!("predicate")
-    rule p_true() = quiet!{ "⊤" / "true" / r"\top" }
+    rule pred_id() = quiet!{ !"true" id() } / expected!("predicate")
     rule p_false() = quiet!{ "⊥" / "⟂" / "false" / r"\bot" }
-    rule not() = quiet!{ "¬" / "~" / "not" / r"\lnot" / r"\neg" } / expected!("¬")
-    rule and() = quiet!{ "∧" / r"/\" / "&" / "and" / r"\land" / r"\wedge" } / expected!("∧")
-    rule or() = quiet!{ "∨" / r"\/" / "|" / "or" / r"\lor" / r"\vee" } / expected!("∨")
-    rule to() = quiet!{ "→" / "->" / "=>" / "to" / r"\rightarrow" / r"\to" } / expected!("→")
-    rule iff() = quiet!{ "↔" / "<->" / "<=>" / "iff" / r"\leftrightarrow" } / expected!("↔")
-    rule all() = quiet!{ "∀" / "!" / "all" / r"\forall" } / expected!("∀")
-    rule ex() = quiet!{ "∃" / "?" / "ex" / r"\exists" } / expected!("∃")
-    rule eq() = quiet!{ "=" } / expected!("=")
-    rule comma() = quiet!{ "," }
-    rule turnstile() = quiet!{ "⊢" / "|-" / "├" / "┣" / r"\vdash" } / expected!("⊢")
+    rule not() = quiet!{ "¬" / "~" / "not" / r"\lnot" / r"\neg" } / expected!(r#""¬""#)
+    rule and() = quiet!{ "∧" / r"/\" / "&" / "and" / r"\land" / r"\wedge" } / expected!(r#""∧""#)
+    rule or() = quiet!{ "∨" / r"\/" / "|" / "or" / r"\lor" / r"\vee" } / expected!(r#""∨""#)
+    rule to() = quiet!{ "→" / "->" / "=>" / "to" / r"\rightarrow" / r"\to" } / expected!(r#""→""#)
+    rule iff() = quiet!{ "↔" / "<->" / "<=>" / "iff" / r"\leftrightarrow" } / expected!(r#""↔""#)
+    rule all() = quiet!{ "∀" / "!" / "all" / r"\forall" } / expected!(r#""∀""#)
+    rule ex() = quiet!{ "∃" / "?" / "ex" / r"\exists" } / expected!(r#""∃""#)
+    rule eq() = quiet!{ "=" } / expected!(r#""=""#)
     rule _ = quiet!{ [' ']* }
 });
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::syntax::Sort;
+    use Term::Fn;
 
     // --- parse_term ---
 
     #[test]
-    fn test_parse_term_simple_variable() {
-        assert_eq!(parse_term("x").unwrap(), Term::Var("x".into()));
+    fn test_parse_term_variable() {
+        assert_eq!(parse_term("x").unwrap(), Var("x".into()));
     }
 
     #[test]
     fn test_parse_term_unary_function() {
         assert_eq!(
             parse_term("f(x)").unwrap(),
-            Term::Fn("f".into(), vec![Term::Var("x".into())])
+            Fn("f".into(), vec![Var("x".into())])
         );
     }
 
     #[test]
     fn test_parse_term_binary_function() {
         assert_eq!(
-            parse_term("f(x, y)").unwrap(),
-            Term::Fn(
-                "f".into(),
-                vec![Term::Var("x".into()), Term::Var("y".into())]
-            )
+            parse_term("f(x,y)").unwrap(),
+            Fn("f".into(), vec![Var("x".into()), Var("y".into())])
         );
     }
 
@@ -266,16 +203,22 @@ mod tests {
     fn test_parse_term_nested_function() {
         assert_eq!(
             parse_term("f(g(x))").unwrap(),
-            Term::Fn(
-                "f".into(),
-                vec![Term::Fn("g".into(), vec![Term::Var("x".into())])]
-            )
+            Fn("f".into(), vec![Fn("g".into(), vec![Var("x".into())])])
         );
     }
 
     #[test]
     fn test_parse_term_parenthesized() {
-        assert_eq!(parse_term("(x)").unwrap(), Term::Var("x".into()));
+        assert_eq!(parse_term("(x)").unwrap(), Var("x".into()));
+    }
+
+    #[test]
+    fn test_parse_term_with_apostrophe() {
+        assert_eq!(parse_term("x'").unwrap(), Var("x'".into()));
+        assert_eq!(
+            parse_term("f(x')").unwrap(),
+            Fn("f".into(), vec![Var("x'".into())])
+        );
     }
 
     // --- parse_formula ---
@@ -284,23 +227,39 @@ mod tests {
     fn test_parse_formula_equality() {
         assert_eq!(
             parse_formula("x = y").unwrap(),
-            Formula::Eq(Term::Var("x".into()), Term::Var("y".into()))
+            Eq(Var("x".into()), Var("y".into()))
         );
     }
 
     #[test]
     fn test_parse_formula_predicate_no_arg() {
-        assert_eq!(
-            parse_formula("P").unwrap(),
-            Formula::Atom("P".into(), vec![])
-        );
+        assert_eq!(parse_formula("P").unwrap(), Atom("P".into(), vec![]));
     }
 
     #[test]
     fn test_parse_formula_predicate_one_arg() {
         assert_eq!(
-            parse_formula("P x").unwrap(),
-            Formula::Atom("P".into(), vec![Term::Var("x".into())])
+            parse_formula("P(x)").unwrap(),
+            Atom("P".into(), vec![Var("x".into())])
+        );
+    }
+
+    #[test]
+    fn test_parse_formula_predicate_two_args() {
+        assert_eq!(
+            parse_formula("P(x,y)").unwrap(),
+            Atom("P".into(), vec![Var("x".into()), Var("y".into())])
+        );
+    }
+
+    #[test]
+    fn test_parse_formula_equality_with_function() {
+        assert_eq!(
+            parse_formula("f(x) = g(y)").unwrap(),
+            Eq(
+                Fn("f".into(), vec![Var("x".into())]),
+                Fn("g".into(), vec![Var("y".into())])
+            )
         );
     }
 
@@ -308,7 +267,16 @@ mod tests {
     fn test_parse_formula_negation() {
         assert_eq!(
             parse_formula("¬P").unwrap(),
-            Formula::Not(Box::new(Formula::Atom("P".into(), vec![])))
+            Not(Box::new(Atom("P".into(), vec![])))
+        );
+    }
+
+    #[test]
+    fn test_parse_formula_double_negation() {
+        let result = parse_formula("¬¬P").unwrap();
+        assert_eq!(
+            result,
+            Not(Box::new(Not(Box::new(Atom("P".into(), vec![])))))
         );
     }
 
@@ -316,9 +284,9 @@ mod tests {
     fn test_parse_formula_implication() {
         assert_eq!(
             parse_formula("P → Q").unwrap(),
-            Formula::To(
-                Box::new(Formula::Atom("P".into(), vec![])),
-                Box::new(Formula::Atom("Q".into(), vec![]))
+            To(
+                Box::new(Atom("P".into(), vec![])),
+                Box::new(Atom("Q".into(), vec![]))
             )
         );
     }
@@ -327,9 +295,9 @@ mod tests {
     fn test_parse_formula_disjunction() {
         assert_eq!(
             parse_formula("P ∨ Q").unwrap(),
-            Formula::Or(
-                Box::new(Formula::Atom("P".into(), vec![])),
-                Box::new(Formula::Atom("Q".into(), vec![]))
+            Or(
+                Box::new(Atom("P".into(), vec![])),
+                Box::new(Atom("Q".into(), vec![]))
             )
         );
     }
@@ -338,9 +306,9 @@ mod tests {
     fn test_parse_formula_conjunction() {
         assert_eq!(
             parse_formula("P ∧ Q").unwrap(),
-            Formula::And(
-                Box::new(Formula::Atom("P".into(), vec![])),
-                Box::new(Formula::Atom("Q".into(), vec![]))
+            And(
+                Box::new(Atom("P".into(), vec![])),
+                Box::new(Atom("Q".into(), vec![]))
             )
         );
     }
@@ -349,197 +317,132 @@ mod tests {
     fn test_parse_formula_iff() {
         assert_eq!(
             parse_formula("P ↔ Q").unwrap(),
-            Formula::Iff(
-                Box::new(Formula::Atom("P".into(), vec![])),
-                Box::new(Formula::Atom("Q".into(), vec![]))
+            Iff(
+                Box::new(Atom("P".into(), vec![])),
+                Box::new(Atom("Q".into(), vec![]))
             )
         );
     }
 
     #[test]
-    fn test_parse_formula_forall_single() {
+    fn test_parse_formula_implication_chain_right_assoc() {
+        let result = parse_formula("P → Q → R").unwrap();
         assert_eq!(
-            parse_formula("∀ x, P x").unwrap(),
-            Formula::All {
-                v: "x".into(),
-                sort: Sort::Obj,
-                body: Box::new(Formula::Atom("P".into(), vec![Term::Bound(0)]))
-            }
+            result,
+            To(
+                Box::new(Atom("P".into(), vec![])),
+                Box::new(To(
+                    Box::new(Atom("Q".into(), vec![])),
+                    Box::new(Atom("R".into(), vec![]))
+                ))
+            )
         );
     }
 
     #[test]
-    fn test_parse_formula_forall_multi_vars() {
-        let result = parse_formula("∀ x y z, P x y z").unwrap();
-        let expected = Formula::All {
-            v: "x".into(),
-            sort: Sort::Obj,
-            body: Box::new(Formula::All {
-                v: "y".into(),
-                sort: Sort::Obj,
-                body: Box::new(Formula::All {
-                    v: "z".into(),
-                    sort: Sort::Obj,
-                    body: Box::new(Formula::Atom(
-                        "P".into(),
-                        vec![Term::Bound(2), Term::Bound(1), Term::Bound(0)],
-                    )),
-                }),
-            }),
-        };
-        assert_eq!(result, expected);
-    }
-
-    #[test]
-    fn test_parse_formula_forall_typed_single() {
+    fn test_parse_formula_iff_chain_right_assoc() {
+        let result = parse_formula("P ↔ Q ↔ R").unwrap();
         assert_eq!(
-            parse_formula("∀ (x : N), P x").unwrap(),
-            Formula::All {
-                v: "x".into(),
-                sort: Sort::Nat,
-                body: Box::new(Formula::Atom("P".into(), vec![Term::Bound(0)]))
-            }
+            result,
+            Iff(
+                Box::new(Atom("P".into(), vec![])),
+                Box::new(Iff(
+                    Box::new(Atom("Q".into(), vec![])),
+                    Box::new(Atom("R".into(), vec![]))
+                ))
+            )
         );
     }
 
     #[test]
-    fn test_parse_formula_forall_typed_group() {
-        let result = parse_formula("∀ (x y z : N), P x y z").unwrap();
-        let expected = Formula::All {
-            v: "x".into(),
-            sort: Sort::Nat,
-            body: Box::new(Formula::All {
-                v: "y".into(),
-                sort: Sort::Nat,
-                body: Box::new(Formula::All {
-                    v: "z".into(),
-                    sort: Sort::Nat,
-                    body: Box::new(Formula::Atom(
-                        "P".into(),
-                        vec![Term::Bound(2), Term::Bound(1), Term::Bound(0)],
-                    )),
-                }),
-            }),
-        };
-        assert_eq!(result, expected);
-    }
-
-    #[test]
-    fn test_parse_formula_forall_multi_typed_groups() {
-        let result = parse_formula("∀ (x : N) (y : Nat), P x y").unwrap();
-        let expected = Formula::All {
-            v: "x".into(),
-            sort: Sort::Nat,
-            body: Box::new(Formula::All {
-                v: "y".into(),
-                sort: Sort::Nat,
-                body: Box::new(Formula::Atom(
-                    "P".into(),
-                    vec![Term::Bound(1), Term::Bound(0)],
-                )),
-            }),
-        };
-        assert_eq!(result, expected);
-    }
-
-    #[test]
-    fn test_parse_formula_exists_single() {
+    fn test_parse_formula_and_chain_right_assoc() {
+        let result = parse_formula("P ∧ Q ∧ R").unwrap();
         assert_eq!(
-            parse_formula("∃ x, P x").unwrap(),
-            Formula::Ex {
-                v: "x".into(),
-                sort: Sort::Obj,
-                body: Box::new(Formula::Atom("P".into(), vec![Term::Bound(0)]))
-            }
+            result,
+            And(
+                Box::new(Atom("P".into(), vec![])),
+                Box::new(And(
+                    Box::new(Atom("Q".into(), vec![])),
+                    Box::new(Atom("R".into(), vec![]))
+                ))
+            )
         );
     }
 
     #[test]
-    fn test_parse_formula_exists_multi_vars() {
-        let result = parse_formula("∃ x y z, P x y z").unwrap();
-        let expected = Formula::Ex {
-            v: "x".into(),
-            sort: Sort::Obj,
-            body: Box::new(Formula::Ex {
-                v: "y".into(),
-                sort: Sort::Obj,
-                body: Box::new(Formula::Ex {
-                    v: "z".into(),
-                    sort: Sort::Obj,
-                    body: Box::new(Formula::Atom(
-                        "P".into(),
-                        vec![Term::Bound(2), Term::Bound(1), Term::Bound(0)],
-                    )),
-                }),
-            }),
-        };
-        assert_eq!(result, expected);
+    fn test_parse_formula_or_chain_right_assoc() {
+        let result = parse_formula("P ∨ Q ∨ R").unwrap();
+        assert_eq!(
+            result,
+            Or(
+                Box::new(Atom("P".into(), vec![])),
+                Box::new(Or(
+                    Box::new(Atom("Q".into(), vec![])),
+                    Box::new(Atom("R".into(), vec![]))
+                ))
+            )
+        );
+    }
+
+    // precedence: ¬, ∀, ∃ > ∧ > ∨ > → > ↔
+
+    #[test]
+    fn test_parse_formula_negation_binds_tighter_than_and() {
+        // ¬P ∧ Q  = (¬P) ∧ Q
+        let result = parse_formula("¬P ∧ Q").unwrap();
+        assert_eq!(
+            result,
+            And(
+                Box::new(Not(Box::new(Atom("P".into(), vec![])))),
+                Box::new(Atom("Q".into(), vec![]))
+            )
+        );
     }
 
     #[test]
-    fn test_parse_formula_nested_forall() {
-        let result = parse_formula("∀ x, ∀ y, P x y").unwrap();
-        let expected = Formula::All {
-            v: "x".into(),
-            sort: Sort::Obj,
-            body: Box::new(Formula::All {
-                v: "y".into(),
-                sort: Sort::Obj,
-                body: Box::new(Formula::Atom(
-                    "P".into(),
-                    vec![Term::Bound(1), Term::Bound(0)],
-                )),
-            }),
-        };
-        assert_eq!(result, expected);
-    }
-
-    #[test]
-    fn test_parse_formula_forall_multi_typed_groups_mixed() {
-        let result = parse_formula("∀ (x : N) (y : Obj), P x y").unwrap();
-        let expected = Formula::All {
-            v: "x".into(),
-            sort: Sort::Nat,
-            body: Box::new(Formula::All {
-                v: "y".into(),
-                sort: Sort::Obj,
-                body: Box::new(Formula::Atom(
-                    "P".into(),
-                    vec![Term::Bound(1), Term::Bound(0)],
-                )),
-            }),
-        };
-        assert_eq!(result, expected);
-    }
-
-    #[test]
-    fn test_parse_formula_precedence_and_vs_or() {
+    fn test_parse_formula_and_binds_tighter_than_or() {
+        // P ∧ Q ∨ R = (P ∧ Q) ∨ R
         let result = parse_formula("P ∧ Q ∨ R").unwrap();
-        // ∧ binds tighter than ∨, so (P ∧ Q) ∨ R
         assert_eq!(
             result,
-            Formula::Or(
-                Box::new(Formula::And(
-                    Box::new(Formula::Atom("P".into(), vec![])),
-                    Box::new(Formula::Atom("Q".into(), vec![]))
+            Or(
+                Box::new(And(
+                    Box::new(Atom("P".into(), vec![])),
+                    Box::new(Atom("Q".into(), vec![]))
                 )),
-                Box::new(Formula::Atom("R".into(), vec![]))
+                Box::new(Atom("R".into(), vec![]))
             )
         );
     }
 
     #[test]
-    fn test_parse_formula_precedence_to_vs_or() {
+    fn test_parse_formula_or_binds_tighter_than_to() {
+        // P ∨ Q → R = (P ∨ Q) → R
         let result = parse_formula("P ∨ Q → R").unwrap();
-        // ∨ binds tighter than →, so (P ∨ Q) → R
         assert_eq!(
             result,
-            Formula::To(
-                Box::new(Formula::Or(
-                    Box::new(Formula::Atom("P".into(), vec![])),
-                    Box::new(Formula::Atom("Q".into(), vec![]))
+            To(
+                Box::new(Or(
+                    Box::new(Atom("P".into(), vec![])),
+                    Box::new(Atom("Q".into(), vec![]))
                 )),
-                Box::new(Formula::Atom("R".into(), vec![]))
+                Box::new(Atom("R".into(), vec![]))
+            )
+        );
+    }
+
+    #[test]
+    fn test_parse_formula_to_binds_tighter_than_iff() {
+        // P → Q ↔ R = (P → Q) ↔ R
+        let result = parse_formula("P → Q ↔ R").unwrap();
+        assert_eq!(
+            result,
+            Iff(
+                Box::new(To(
+                    Box::new(Atom("P".into(), vec![])),
+                    Box::new(Atom("Q".into(), vec![]))
+                )),
+                Box::new(Atom("R".into(), vec![]))
             )
         );
     }
@@ -549,148 +452,174 @@ mod tests {
         let result = parse_formula("P → (Q ∧ R)").unwrap();
         assert_eq!(
             result,
-            Formula::To(
-                Box::new(Formula::Atom("P".into(), vec![])),
-                Box::new(Formula::And(
-                    Box::new(Formula::Atom("Q".into(), vec![])),
-                    Box::new(Formula::Atom("R".into(), vec![]))
+            To(
+                Box::new(Atom("P".into(), vec![])),
+                Box::new(And(
+                    Box::new(Atom("Q".into(), vec![])),
+                    Box::new(Atom("R".into(), vec![]))
                 ))
             )
         );
     }
 
-    /// ∀ は最も優先順位が低い（スコープが右に伸びる）: ∀ x, (P x → Q)
+    #[test]
+    fn test_parse_formula_negation_over_forall() {
+        // ¬∀x P(x) = ¬(∀x P(x))
+        let result = parse_formula("¬∀x P(x)").unwrap();
+        assert_eq!(
+            result,
+            Not(Box::new(All {
+                v: "x".into(),
+                sort: Obj,
+                body: Box::new(Atom("P".into(), vec![Bound(0)]))
+            }))
+        );
+    }
+
     #[test]
     fn test_parse_formula_forall_scopes_over_to() {
-        let result = parse_formula("∀ x, P x → Q").unwrap();
+        // ∀x P(x) → Q = (∀x P(x)) → Q
+        let result = parse_formula("∀x P(x) → Q").unwrap();
         assert_eq!(
             result,
-            Formula::All {
+            To(
+                Box::new(All {
+                    v: "x".into(),
+                    sort: Obj,
+                    body: Box::new(Atom("P".into(), vec![Bound(0)]))
+                }),
+                Box::new(Atom("Q".into(), vec![]))
+            )
+        );
+    }
+
+    // Quantifiers
+
+    #[test]
+    fn test_parse_formula_forall_single() {
+        assert_eq!(
+            parse_formula("∀x P(x)").unwrap(),
+            All {
                 v: "x".into(),
-                sort: Sort::Obj,
-                body: Box::new(Formula::To(
-                    Box::new(Formula::Atom("P".into(), vec![Term::Bound(0)])),
-                    Box::new(Formula::Atom("Q".into(), vec![]))
-                ))
+                sort: Obj,
+                body: Box::new(Atom("P".into(), vec![Bound(0)]))
             }
         );
     }
 
-    /// ∃ は最も優先順位が低い: ∃ x, (P x ∧ Q)
     #[test]
-    fn test_parse_formula_exists_scopes_over_and() {
-        let result = parse_formula("∃ x, P x ∧ Q").unwrap();
+    fn test_parse_formula_forall_typed_nat() {
         assert_eq!(
-            result,
-            Formula::Ex {
+            parse_formula("∀x:Nat P(x)").unwrap(),
+            All {
                 v: "x".into(),
-                sort: Sort::Obj,
-                body: Box::new(Formula::And(
-                    Box::new(Formula::Atom("P".into(), vec![Term::Bound(0)])),
-                    Box::new(Formula::Atom("Q".into(), vec![]))
-                ))
+                sort: Nat,
+                body: Box::new(Atom("P".into(), vec![Bound(0)]))
             }
         );
     }
 
-    /// → は右結合: P → Q → R = P → (Q → R)
     #[test]
-    fn test_parse_formula_to_right_assoc() {
-        let result = parse_formula("P → Q → R").unwrap();
+    fn test_parse_formula_forall_double() {
+        let result = parse_formula("∀x∀y P(x,y)").unwrap();
+        let expected = All {
+            v: "x".into(),
+            sort: Obj,
+            body: Box::new(All {
+                v: "y".into(),
+                sort: Obj,
+                body: Box::new(Atom("P".into(), vec![Bound(1), Bound(0)])),
+            }),
+        };
+        assert_eq!(result, expected);
+    }
+
+    #[test]
+    fn test_parse_formula_exists_single() {
         assert_eq!(
-            result,
-            Formula::To(
-                Box::new(Formula::Atom("P".into(), vec![])),
-                Box::new(Formula::To(
-                    Box::new(Formula::Atom("Q".into(), vec![])),
-                    Box::new(Formula::Atom("R".into(), vec![]))
-                ))
-            )
+            parse_formula("∃x P(x)").unwrap(),
+            Ex {
+                v: "x".into(),
+                sort: Obj,
+                body: Box::new(Atom("P".into(), vec![Bound(0)]))
+            }
         );
     }
 
-    /// ∧ は右結合: P ∧ Q ∧ R = P ∧ (Q ∧ R)
     #[test]
-    fn test_parse_formula_and_right_assoc() {
-        let result = parse_formula("P ∧ Q ∧ R").unwrap();
+    fn test_parse_formula_exists_typed() {
         assert_eq!(
-            result,
-            Formula::And(
-                Box::new(Formula::Atom("P".into(), vec![])),
-                Box::new(Formula::And(
-                    Box::new(Formula::Atom("Q".into(), vec![])),
-                    Box::new(Formula::Atom("R".into(), vec![]))
-                ))
-            )
+            parse_formula("∃x:Int P(x)").unwrap(),
+            Ex {
+                v: "x".into(),
+                sort: Int,
+                body: Box::new(Atom("P".into(), vec![Bound(0)]))
+            }
         );
     }
 
-    /// ∨ は右結合: P ∨ Q ∨ R = P ∨ (Q ∨ R)
     #[test]
-    fn test_parse_formula_or_right_assoc() {
-        let result = parse_formula("P ∨ Q ∨ R").unwrap();
+    fn test_parse_formula_exists_double() {
+        let result = parse_formula("∃x∃y P(x,y)").unwrap();
         assert_eq!(
             result,
-            Formula::Or(
-                Box::new(Formula::Atom("P".into(), vec![])),
-                Box::new(Formula::Or(
-                    Box::new(Formula::Atom("Q".into(), vec![])),
-                    Box::new(Formula::Atom("R".into(), vec![]))
-                ))
-            )
+            Ex {
+                v: "x".into(),
+                sort: Obj,
+                body: Box::new(Ex {
+                    v: "y".into(),
+                    sort: Obj,
+                    body: Box::new(Atom("P".into(), vec![Bound(1), Bound(0)]))
+                })
+            }
         );
     }
 
-    /// ⊤ は False → False としてパースされる。
     #[test]
-    fn test_parse_formula_true() {
+    fn test_parse_formula_mixed_quantifiers() {
+        let result = parse_formula("∀x∃y P(x,y)").unwrap();
         assert_eq!(
-            parse_formula("true").unwrap(),
-            Formula::To(Box::new(Formula::False), Box::new(Formula::False))
+            result,
+            All {
+                v: "x".into(),
+                sort: Obj,
+                body: Box::new(Ex {
+                    v: "y".into(),
+                    sort: Obj,
+                    body: Box::new(Atom("P".into(), vec![Bound(1), Bound(0)]))
+                })
+            }
+        );
+    }
+
+    #[test]
+    fn test_parse_formula_forall_nat_exists_int() {
+        let result = parse_formula("∀x:N ∃y:Int P(x,y)").unwrap();
+        assert_eq!(
+            result,
+            All {
+                v: "x".into(),
+                sort: Nat,
+                body: Box::new(Ex {
+                    v: "y".into(),
+                    sort: Int,
+                    body: Box::new(Atom("P".into(), vec![Bound(1), Bound(0)]))
+                })
+            }
         );
     }
 
     #[test]
     fn test_parse_formula_false() {
-        assert_eq!(parse_formula("false").unwrap(), Formula::False);
-    }
-
-    // --- parse_goal ---
-
-    #[test]
-    fn test_parse_goal_empty_hypotheses() {
-        let (hyps, target) = parse_goal("⊢ x = y").unwrap();
-        assert!(hyps.is_empty());
-        assert_eq!(
-            target,
-            Formula::Eq(Term::Var("x".into()), Term::Var("y".into()))
-        );
+        assert_eq!(parse_formula("false").unwrap(), False);
     }
 
     #[test]
-    fn test_parse_goal_single_hypothesis() {
-        let (hyps, target) = parse_goal("P ⊢ Q").unwrap();
-        assert_eq!(hyps, vec![Formula::Atom("P".into(), vec![])]);
-        assert_eq!(target, Formula::Atom("Q".into(), vec![]));
+    fn test_parse_formula_bot_as_false() {
+        assert_eq!(parse_formula("⊥").unwrap(), False);
     }
 
-    #[test]
-    fn test_parse_goal_two_hypotheses() {
-        let (hyps, target) = parse_goal("P x, Q y ⊢ x = y").unwrap();
-        assert_eq!(
-            hyps,
-            vec![
-                Formula::Atom("P".into(), vec![Term::Var("x".into())]),
-                Formula::Atom("Q".into(), vec![Term::Var("y".into())]),
-            ]
-        );
-        assert_eq!(
-            target,
-            Formula::Eq(Term::Var("x".into()), Term::Var("y".into()))
-        );
-    }
-
-    // --- error cases ---
+    // Error cases
 
     #[test]
     fn test_parse_formula_mismatched_parentheses() {
@@ -699,20 +628,33 @@ mod tests {
     }
 
     #[test]
-    fn test_parse_goal_too_many_targets() {
-        let err = parse_goal("P ⊢ Q, R").unwrap_err();
-        assert!(matches!(err, Error::TargetCount));
+    fn test_parse_formula_mismatched_parentheses_right() {
+        let err = parse_formula("P)").unwrap_err();
+        assert!(matches!(err, Error::Parentheses { lp: 0, rp: 1 }));
     }
 
     #[test]
-    fn test_parse_term_garbage() {
-        let err = parse_term("@#$").unwrap_err();
+    fn test_parse_formula_invalid_formula() {
+        let err = parse_formula("P ∧").unwrap_err();
         assert!(matches!(err, Error::Peg { .. }));
     }
 
+    // de Bruijn index verification
+
     #[test]
-    fn test_parse_formula_garbage() {
-        let err = parse_formula("???").unwrap_err();
-        assert!(matches!(err, Error::Peg { .. }));
+    fn test_parse_formula_nested_quantifier_bruijn() {
+        // ∀x∀y P(x,y) → Bound(1)=x, Bound(0)=y
+        let result = parse_formula("∀x∀y P(x,y)").unwrap();
+        let All { body, .. } = result else {
+            unreachable!();
+        };
+        let All { body: inner, .. } = *body else {
+            unreachable!();
+        };
+        let Atom(_, args) = *inner else {
+            unreachable!();
+        };
+        assert_eq!(args[0], Bound(1)); // x is outer
+        assert_eq!(args[1], Bound(0)); // y is inner
     }
 }

@@ -912,7 +912,7 @@ pub fn examples() -> ExampleList {
             },
             Example {
                 title: "Universal instantiation".into(),
-                input: "all x, P x |- P a".into(),
+                input: "all x P(x) |- P(a)".into(),
             },
         ],
     }
@@ -1027,7 +1027,20 @@ impl State {
     /// 入力文字列から状態を作る。
     fn from_input(input: &str) -> Result<Self, String> {
         let normalized = normalize_input(input);
-        let (hypotheses, target) = parser::parse_goal(&normalized).map_err(|e| e.to_string())?;
+        let (hyp_str, target_str) = normalized.split_once("|-").unwrap_or(("", &normalized));
+        let hypotheses: Vec<Formula> = if hyp_str.trim().is_empty() {
+            vec![]
+        } else {
+            hyp_str
+                .split(',')
+                .map(|s| parser::parse_formula(s.trim()).map_err(|e| e.to_string()))
+                .collect::<Result<Vec<_>, _>>()?
+        };
+        let target = if target_str.trim().is_empty() {
+            False
+        } else {
+            parser::parse_formula(target_str.trim()).map_err(|e| e.to_string())?
+        };
         Ok(Self {
             theorem_input: normalized,
             goals: vec![Goal { hypotheses, target }],
@@ -1362,7 +1375,6 @@ fn normalize_input(input: &str) -> String {
         .replace('⇒', "->")
         .replace('⊢', "|-")
         .replace('⊥', "false")
-        .replace('⊤', "true")
 }
 
 /// エラーを JS へ渡す。
