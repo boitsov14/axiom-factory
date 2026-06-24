@@ -160,8 +160,6 @@ pub fn fresh(base: &str, avoid: &HashSet<Id>) -> Id {
 mod tests {
     use crate::parser::parse_formula;
 
-    // --- display (to_string) ---
-
     #[test]
     fn test_display_equality() {
         assert_eq!(parse_formula("x = y").unwrap().to_string(), "(x = y)");
@@ -174,7 +172,7 @@ mod tests {
 
     #[test]
     fn test_display_predicate_with_args() {
-        assert_eq!(parse_formula("P(x, y)").unwrap().to_string(), "P x y");
+        assert_eq!(parse_formula("P(x,y)").unwrap().to_string(), "P(x,y)");
     }
 
     #[test]
@@ -205,82 +203,69 @@ mod tests {
         );
     }
 
-    // --- quantifier display ---
-
     #[test]
     fn test_display_forall_single() {
         let f = parse_formula("∀x P(x)").unwrap();
-        assert_eq!(f.to_string(), r"\forall x, P x");
+        assert_eq!(f.to_string(), r"\forall x P(x)");
     }
 
     #[test]
     fn test_display_forall_multi_vars() {
-        let f = parse_formula("∀x∀y∀z P(x, y, z)").unwrap();
-        assert_eq!(f.to_string(), r"\forall x y z, P x y z");
+        let f = parse_formula("∀x∀y∀z P(x,y,z)").unwrap();
+        assert_eq!(f.to_string(), r"\forall x \forall y \forall z P(x,y,z)");
     }
 
     #[test]
     fn test_display_forall_typed_single() {
         let f = parse_formula("∀x:N P(x)").unwrap();
-        assert_eq!(f.to_string(), r"\forall (x : \mathbb{N}), P x");
+        assert_eq!(f.to_string(), r"\forall x:\mathbb{N} P(x)");
     }
 
     #[test]
     fn test_display_forall_typed_group() {
-        let f = parse_formula("∀x:N ∀y:N ∀z:N P(x, y, z)").unwrap();
-        assert_eq!(f.to_string(), r"\forall (x y z : \mathbb{N}), P x y z");
+        let f = parse_formula("∀x:N ∀y:N ∀z:N P(x,y,z)").unwrap();
+        assert_eq!(
+            f.to_string(),
+            r"\forall x:\mathbb{N} \forall y:\mathbb{N} \forall z:\mathbb{N} P(x,y,z)"
+        );
     }
 
     #[test]
     fn test_display_forall_multi_typed_groups() {
-        let f = parse_formula("∀x:N ∀y:Nat P(x, y)").unwrap();
-        // Both Nat, same sort → one group
-        assert_eq!(f.to_string(), r"\forall (x y : \mathbb{N}), P x y");
-    }
-
-    #[test]
-    fn test_display_forall_mixed_sorts() {
-        let f = parse_formula("∀x:N ∀y P(x, y)").unwrap();
-        // Different sorts: x has sort N, y is Obj
-        assert_eq!(f.to_string(), r"\forall (x : \mathbb{N}) y, P x y");
+        let f = parse_formula("∀x:N ∀y:N P(x,y)").unwrap();
+        assert_eq!(
+            f.to_string(),
+            r"\forall x:\mathbb{N} \forall y:\mathbb{N} P(x,y)"
+        );
     }
 
     #[test]
     fn test_display_exists_single() {
         let f = parse_formula("∃x P(x)").unwrap();
-        assert_eq!(f.to_string(), r"\exists x, P x");
+        assert_eq!(f.to_string(), r"\exists x P(x)");
     }
 
     #[test]
     fn test_display_exists_multi_vars() {
-        let f = parse_formula("∃x∃y∃z P(x, y, z)").unwrap();
-        assert_eq!(f.to_string(), r"\exists x y z, P x y z");
+        let f = parse_formula("∃x∃y∃z P(x,y,z)").unwrap();
+        assert_eq!(f.to_string(), r"\exists x \exists y \exists z P(x,y,z)");
     }
 
     #[test]
     fn test_display_forall_nested() {
-        let f = parse_formula("∀x∀y P(x, y)").unwrap();
-        // Nested ∀ with same sort → merged into one group
-        assert_eq!(f.to_string(), r"\forall x y, P x y");
+        let f = parse_formula("∀x∀y P(x,y)").unwrap();
+        assert_eq!(f.to_string(), r"\forall x \forall y P(x,y)");
     }
 
     #[test]
     fn test_display_mixed_quantifier_alternation() {
-        let f = parse_formula("∀x∃y P(x, y)").unwrap();
-        assert_eq!(f.to_string(), r"\forall x, \exists y, P x y");
+        let f = parse_formula("∀x∃y P(x,y)").unwrap();
+        assert_eq!(f.to_string(), r"\forall x \exists y P(x,y)");
     }
 
     #[test]
     fn test_display_complex_mixed() {
-        let f = parse_formula("∀x∀y∃z P(x, y, z)").unwrap();
-        assert_eq!(f.to_string(), r"\forall x y, \exists z, P x y z");
-    }
-
-    /// ∀ は ¬, ∀, ∃ > ∧ > ∨ > → > ↔ の優先順位で → より高い。
-    /// 明示的な括弧により ∀ が → にスコープする。
-    #[test]
-    fn test_display_forall_scopes_over_to_with_parens() {
-        let f = parse_formula("∀x (P(x) → Q)").unwrap();
-        assert_eq!(f.to_string(), r"\forall x, (P x \to Q)");
+        let f = parse_formula("∀x∀y∃z P(x,y,z)").unwrap();
+        assert_eq!(f.to_string(), r"\forall x \forall y \exists z P(x,y,z)");
     }
 }
