@@ -139,19 +139,11 @@ peg::parser!(grammar parser() for str {
         "(" _ p:formula() _ ")" { p }
     } / expected!("formula")
 
-    rule sort() -> Sort = quiet!{
-        "Obj" { Obj } /
-        "V" { Obj } /
-        "Nat" { Nat } /
-        "N" { Nat } /
-        r"\mathbb{N}" { Nat } /
-        "Int" { Int } /
-        "Z" { Int } /
-        r"\mathbb{Z}" { Int } /
-        "Rat" { Rat } /
-        "Q" { Rat } /
-        r"\mathbb{Q}" { Rat }
-    } / expected!("sort")
+    rule nat() = quiet!{ "Nat" / "N" / "ℕ" / r"\mathbb{N}" } / expected!(r#""ℕ""#)
+    rule int() = quiet!{ "Int" / "Z" / "ℤ" / r"\mathbb{Z}" } / expected!(r#""ℤ""#)
+    rule rat() = quiet!{ "Rat" / "Q" / "ℚ" / r"\mathbb{Q}" } / expected!(r#""ℚ""#)
+    rule obj() = quiet!{ "Obj" / "V" / "𝕍" / r"\mathbb{V}" } / expected!(r#""𝕍""#)
+    rule sort() -> Sort = obj() { Obj } / nat() { Nat } / int() { Int } / rat() { Rat }
 
     rule alpha() = ['a'..='z' | 'A'..='Z']
     rule digit() = ['0'..='9' | '_' | '\'']
@@ -449,15 +441,16 @@ mod tests {
 
     #[test]
     fn test_parse_formula_parentheses_override_precedence() {
-        let result = parse_formula("P → (Q ∧ R)").unwrap();
+        // (P → Q) ∧ R  — 通常 → は ∧ より弱い結合なので、括弧なしでは P → (Q ∧ R)
+        let result = parse_formula("(P → Q) ∧ R").unwrap();
         assert_eq!(
             result,
-            To(
-                Box::new(Atom("P".into(), vec![])),
-                Box::new(And(
-                    Box::new(Atom("Q".into(), vec![])),
-                    Box::new(Atom("R".into(), vec![]))
-                ))
+            And(
+                Box::new(To(
+                    Box::new(Atom("P".into(), vec![])),
+                    Box::new(Atom("Q".into(), vec![]))
+                )),
+                Box::new(Atom("R".into(), vec![]))
             )
         );
     }
