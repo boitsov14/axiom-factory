@@ -1,122 +1,92 @@
 <script lang="ts">
   import Formula from "@/components/Formula.svelte";
-  import type { ProofScreenProps } from "@/lib/viewProps";
+  import type { Game, ProofView } from "@/wasm/logic";
   import { messageClass } from "@/lib/viewHelpers";
-  import {
-    ApplyTactic,
-    AssumptionTactic,
-    ByContraTactic,
-    CasesTactic,
-    ConstructorTactic,
-    ExfalsoTactic,
-    ExistsTactic,
-    HaveTactic,
-    IntroTactic,
-    LeftTactic,
-    RightTactic,
-    SpecializeHypothesisTactic,
-    SpecializeTermTactic,
-    type AppView,
-  } from "@/wasm/logic";
 
-  let { app, proof, message, controls }: ProofScreenProps = $props();
+  let {
+    game,
+    proof,
+    message,
+    onUpdate,
+    onOpenHome,
+  }: {
+    game: Game;
+    proof: ProofView;
+    message: { text: string; is_error: boolean };
+    onUpdate: (next: ProofView) => void;
+    onOpenHome: () => void;
+  } = $props();
 
-  let existsTerm = $state("a");
-  let specializeTerm = $state("a");
+  let existsTerm = $state("");
+  let specializeTerm = $state("");
   let haveFormula = $state("");
 
-  const selectedHypothesis = $derived(proof.selected.hypothesis_index ?? null);
+  const messageView = $derived({
+    text: message.text,
+    visible: message.text.length > 0,
+    is_info: !message.is_error,
+    is_success: !message.is_error,
+    is_error: message.is_error,
+  });
 
-  function run(next: AppView) {
-    controls.update(next);
+  function run(fn: () => ProofView) {
+    onUpdate(fn());
   }
 
-  function applyAssumption(index: number | null) {
-    if (index != null) {
-      run(AssumptionTactic.apply(app, index));
+  function applyTargetTactic(tactic: { label: string; needs_term_input: boolean }) {
+    if (tactic.needs_term_input) return;
+    switch (tactic.label) {
+      case "Assumption":
+        run(() => game.apply_assumption());
+        break;
+      case "Intro¬": case "Intro→": case "Intro∀":
+        run(() => game.apply_intro());
+        break;
+      case "Conj∧": case "Conj↔":
+        run(() => game.apply_constructor());
+        break;
+      case "Left":
+        run(() => game.apply_left());
+        break;
+      case "Right":
+        run(() => game.apply_right());
+        break;
+      case "ExFalso":
+        run(() => game.apply_exfalso());
+        break;
+      case "ByContra":
+        run(() => game.apply_by_contra());
+        break;
     }
   }
 
-  function applyHypothesis(index: number | null) {
-    if (index != null) {
-      run(ApplyTactic.apply(app, index));
-    }
-  }
-
-  function applyCases(index: number | null) {
-    if (index != null) {
-      run(CasesTactic.apply(app, index));
-    }
-  }
-
-  function applySpecializeTerm(index: number | null) {
-    if (index != null) {
-      run(SpecializeTermTactic.apply(app, index, specializeTerm));
-      specializeTerm = "";
-    }
-  }
-
-  function applySpecializeHypothesis(index: number | null, argumentIndex: number) {
-    if (index != null) {
-      run(SpecializeHypothesisTactic.apply(app, index, argumentIndex));
+  function applyHypothesisTactic(tacticKind: string, hypIndex: number, argIndex?: number) {
+    switch (tacticKind) {
+      case "apply":
+        run(() => game.apply_hypothesis(hypIndex));
+        break;
+      case "cases":
+        run(() => game.apply_cases(hypIndex));
+        break;
+      case "specialize_term":
+        run(() => game.apply_specialize_with_term(hypIndex, specializeTerm));
+        specializeTerm = "";
+        break;
+      case "specialize_hypothesis":
+        if (argIndex != null) {
+          run(() => game.apply_specialize_with_hypothesis(hypIndex, argIndex));
+        }
+        break;
     }
   }
 
   function applyExists() {
-    run(ExistsTactic.apply(app, existsTerm));
+    run(() => game.apply_exists(existsTerm));
     existsTerm = "";
   }
 
-  function canAssumption(index: number | null) {
-    return index != null && AssumptionTactic.is_enabled(app, index);
-  }
-
-  function canApplyHypothesis(index: number | null) {
-    return index != null && ApplyTactic.is_enabled(app, index);
-  }
-
-  function canCases(index: number | null) {
-    return index != null && CasesTactic.is_enabled(app, index);
-  }
-
-  function canSpecializeTerm(index: number | null) {
-    return index != null && SpecializeTermTactic.is_available(app, index);
-  }
-
-  function canApplySpecializeTerm(index: number | null) {
-    return index != null && SpecializeTermTactic.can_apply(app, index, specializeTerm);
-  }
-
-  function hasSpecializeHypothesisOptions(index: number | null) {
-    return index != null && SpecializeHypothesisTactic.has_options(app, index);
-  }
-
-  function canSpecializeHypothesis(index: number | null, argumentIndex: number) {
-    return index != null && SpecializeHypothesisTactic.is_enabled(app, index, argumentIndex);
-  }
-
-  function assumptionDescription(index: number | null) {
-    return index == null ? "" : AssumptionTactic.description(app, index);
-  }
-
-  function applyDescription(index: number | null) {
-    return index == null ? "" : ApplyTactic.description(app, index);
-  }
-
-  function casesDescription(index: number | null) {
-    return index == null ? "" : CasesTactic.description(app, index);
-  }
-
-  function specializeTermDescription(index: number | null) {
-    return index == null ? "" : SpecializeTermTactic.description(app, index);
-  }
-
-  function specializeHypothesisDescription(index: number | null, argumentIndex: number) {
-    return index == null ? "" : SpecializeHypothesisTactic.description(app, index, argumentIndex);
-  }
-
   function applyHave() {
-    run(HaveTactic.apply(app, haveFormula));
+    run(() => game.apply_have(haveFormula));
     haveFormula = "";
   }
 </script>
@@ -131,15 +101,15 @@
             <div class="mt-1 font-mono text-sm text-muted-foreground">{proof.theorem_input}</div>
           </div>
           <div class="flex flex-wrap items-center gap-2">
-            <button class="btn btn-outline" type="button" onclick={controls.openHome}>{proof.toolbar.home_label}</button>
-            <button class="btn btn-secondary" type="button" disabled={!proof.toolbar.can_undo} onclick={controls.undo}>{proof.toolbar.undo_label}</button>
-            <button class="btn btn-secondary" type="button" disabled={!proof.toolbar.can_redo} onclick={controls.redo}>{proof.toolbar.redo_label}</button>
+            <button class="btn btn-outline" type="button" onclick={onOpenHome}>{proof.toolbar.home_label}</button>
+            <button class="btn btn-secondary" type="button" disabled={!proof.toolbar.can_undo} onclick={() => run(() => game.undo())}>{proof.toolbar.undo_label}</button>
+            <button class="btn btn-secondary" type="button" disabled={!proof.toolbar.can_redo} onclick={() => run(() => game.redo())}>{proof.toolbar.redo_label}</button>
           </div>
         </div>
       </section>
 
-      {#if message.visible}
-        <p class={messageClass(message)}>{message.text}</p>
+      {#if messageView.visible}
+        <p class={messageClass(messageView)}>{message.text}</p>
       {/if}
 
       {#if proof.goal == null}
@@ -157,9 +127,9 @@
                 <p class="panel-description">{goal.hint}</p>
               </div>
               <div class="flex items-center gap-2">
-                <button class="btn btn-outline" type="button" disabled={!proof.goal_nav.can_previous} aria-label={proof.goal_nav.previous_label} onclick={controls.previousGoal}>←</button>
+                <button class="btn btn-outline" type="button" disabled={!proof.goal_nav.can_previous} aria-label={proof.goal_nav.previous_label} onclick={() => run(() => game.previous_goal())}>←</button>
                 <span class="text-sm text-muted-foreground">{proof.goal_nav.current} / {proof.goal_nav.total}</span>
-                <button class="btn btn-outline" type="button" disabled={!proof.goal_nav.can_next} aria-label={proof.goal_nav.next_label} onclick={controls.nextGoal}>→</button>
+                <button class="btn btn-outline" type="button" disabled={!proof.goal_nav.can_next} aria-label={proof.goal_nav.next_label} onclick={() => run(() => game.next_goal())}>→</button>
               </div>
             </div>
           </div>
@@ -176,7 +146,7 @@
                       label={hypothesis.label}
                       selected={hypothesis.selected}
                       selectable
-                      onSelect={() => controls.selectHypothesis(hypothesis.index)}
+                      onSelect={() => run(() => game.select_hypothesis(hypothesis.index))}
                     />
                   {/each}
                 </div>
@@ -190,7 +160,7 @@
                 selected={proof.selected.is_target}
                 selectable
                 size="large"
-                onSelect={controls.selectTarget}
+                onSelect={() => run(() => game.select_target())}
               />
             </section>
           </div>
@@ -201,166 +171,77 @@
     <aside class="space-y-6">
       <section class="panel">
         <div class="panel-header">
-          <h2 class="panel-title">{proof.action_title}</h2>
-          <p class="panel-description">{proof.action_hint}</p>
+          <h2 class="panel-title">{proof.selected.label}</h2>
+          <p class="panel-description">Select the target or a hypothesis and apply a tactic.</p>
         </div>
         <div class="panel-content space-y-3">
           {#if proof.done}
             <p class="rounded-md border p-3 text-sm text-muted-foreground">No tactics needed.</p>
           {:else if proof.selected.is_target}
-            {#if IntroTactic.is_enabled(app)}
+            {#each proof.available_tactics.target as tactic}
               <article class="rounded-lg border p-4">
                 <div class="flex items-start justify-between gap-3">
                   <div>
-                    <h3 class="font-semibold">{IntroTactic.label()}</h3>
-                    <p class="mt-1 text-sm text-muted-foreground">{IntroTactic.description(app)}</p>
+                    <h3 class="font-semibold">{tactic.label}</h3>
+                    <p class="mt-1 text-sm text-muted-foreground">{tactic.description}</p>
+                    <div class="mt-2 space-y-0.5 font-mono text-xs text-muted-foreground">
+                      <div class="text-blue-500">{tactic.before}</div>
+                      <div class="text-green-600">→ {tactic.after.replace(/\n/g, "\n   ")}</div>
+                    </div>
                   </div>
-                  <button class="btn btn-primary shrink-0" type="button" onclick={() => run(IntroTactic.apply(app))}>Apply</button>
+                  {#if tactic.needs_term_input}
+                    <div class="shrink-0 self-start">
+                      <input class="field w-20 font-mono" bind:value={existsTerm} placeholder="term" />
+                    </div>
+                  {:else}
+                    <button class="btn btn-primary shrink-0" type="button" onclick={() => applyTargetTactic(tactic)}>Apply</button>
+                  {/if}
                 </div>
-              </article>
-            {/if}
-
-            {#if ConstructorTactic.is_enabled(app)}
-              <article class="rounded-lg border p-4">
-                <div class="flex items-start justify-between gap-3">
-                  <div>
-                    <h3 class="font-semibold">{ConstructorTactic.label()}</h3>
-                    <p class="mt-1 text-sm text-muted-foreground">{ConstructorTactic.description(app)}</p>
+                {#if tactic.needs_term_input}
+                  <div class="mt-3 flex justify-end">
+                    <button class="btn btn-primary" type="button" disabled={existsTerm.trim() === ""} onclick={applyExists}>Apply</button>
                   </div>
-                  <button class="btn btn-primary shrink-0" type="button" onclick={() => run(ConstructorTactic.apply(app))}>Apply</button>
-                </div>
+                {/if}
               </article>
-            {/if}
-
-            {#if LeftTactic.is_enabled(app)}
-              <article class="rounded-lg border p-4">
-                <div class="flex items-start justify-between gap-3">
-                  <div>
-                    <h3 class="font-semibold">{LeftTactic.label()}</h3>
-                    <p class="mt-1 text-sm text-muted-foreground">{LeftTactic.description(app)}</p>
-                  </div>
-                  <button class="btn btn-primary shrink-0" type="button" onclick={() => run(LeftTactic.apply(app))}>Apply</button>
-                </div>
-              </article>
-            {/if}
-
-            {#if RightTactic.is_enabled(app)}
-              <article class="rounded-lg border p-4">
-                <div class="flex items-start justify-between gap-3">
-                  <div>
-                    <h3 class="font-semibold">{RightTactic.label()}</h3>
-                    <p class="mt-1 text-sm text-muted-foreground">{RightTactic.description(app)}</p>
-                  </div>
-                  <button class="btn btn-primary shrink-0" type="button" onclick={() => run(RightTactic.apply(app))}>Apply</button>
-                </div>
-              </article>
-            {/if}
-
-            {#if ExistsTactic.is_available(app)}
-              <article class="rounded-lg border p-4">
-                <div>
-                  <h3 class="font-semibold">{ExistsTactic.label()}</h3>
-                  <p class="mt-1 text-sm text-muted-foreground">{ExistsTactic.description(app)}</p>
-                </div>
-                <div class="mt-3 flex gap-2">
-                  <input class="field flex-1 font-mono" bind:value={existsTerm} placeholder="term" />
-                  <button class="btn btn-primary" type="button" disabled={!ExistsTactic.can_apply(app, existsTerm)} onclick={applyExists}>Apply</button>
-                </div>
-              </article>
-            {/if}
-
-            {#if ExfalsoTactic.is_enabled(app)}
-              <article class="rounded-lg border p-4">
-                <div class="flex items-start justify-between gap-3">
-                  <div>
-                    <h3 class="font-semibold">{ExfalsoTactic.label()}</h3>
-                    <p class="mt-1 text-sm text-muted-foreground">{ExfalsoTactic.description(app)}</p>
-                  </div>
-                  <button class="btn btn-primary shrink-0" type="button" onclick={() => run(ExfalsoTactic.apply(app))}>Apply</button>
-                </div>
-              </article>
-            {/if}
-
-            {#if ByContraTactic.is_enabled(app)}
-              <article class="rounded-lg border p-4">
-                <div class="flex items-start justify-between gap-3">
-                  <div>
-                    <h3 class="font-semibold">{ByContraTactic.label()}</h3>
-                    <p class="mt-1 text-sm text-muted-foreground">{ByContraTactic.description(app)}</p>
-                  </div>
-                  <button class="btn btn-primary shrink-0" type="button" onclick={() => run(ByContraTactic.apply(app))}>Apply</button>
-                </div>
-              </article>
-            {/if}
-          {:else if selectedHypothesis == null}
-            <p class="rounded-md border p-3 text-sm text-muted-foreground">Select a hypothesis.</p>
+            {/each}
           {:else}
-            {#if canAssumption(selectedHypothesis)}
-              <article class="rounded-lg border p-4">
-                <div class="flex items-start justify-between gap-3">
-                  <div>
-                    <h3 class="font-semibold">{AssumptionTactic.label()}</h3>
-                    <p class="mt-1 text-sm text-muted-foreground">{assumptionDescription(selectedHypothesis)}</p>
-                  </div>
-                  <button class="btn btn-primary shrink-0" type="button" onclick={() => applyAssumption(selectedHypothesis)}>Apply</button>
-                </div>
-              </article>
-            {/if}
+            {#each proof.available_tactics.hypotheses as ht (ht.hypothesis_index)}
+              <div class="space-y-3">
+                <p class="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                  Hypothesis {ht.hypothesis_index + 1}
+                </p>
+                {#each ht.tactics as tactic}
+                  <article class="rounded-lg border p-4">
+                    <div class="flex items-start justify-between gap-3">
+                      <div>
+                        <h3 class="font-semibold">{tactic.label}</h3>
+                        <p class="mt-1 text-sm text-muted-foreground">{tactic.description}</p>
+                        <div class="mt-2 space-y-0.5 font-mono text-xs text-muted-foreground">
+                          <div class="text-blue-500">{tactic.before}</div>
+                          <div class="text-green-600">→ {tactic.after.replace(/\n/g, "\n   ")}</div>
+                        </div>
+                      </div>
+                      <div class="shrink-0 self-start">
+                        {#if tactic.kind === "specialize_term"}
+                          <input class="field w-20 font-mono" bind:value={specializeTerm} placeholder="term" />
+                          <button class="btn btn-primary mt-2" type="button" disabled={specializeTerm.trim() === ""}
+                            onclick={() => applyHypothesisTactic(tactic.kind, ht.hypothesis_index)}>Apply</button>
+                        {:else if tactic.kind === "specialize_hypothesis"}
+                          <button class="btn btn-primary" type="button"
+                            onclick={() => applyHypothesisTactic(tactic.kind, ht.hypothesis_index, 0)}>Apply</button>
+                        {:else}
+                          <button class="btn btn-primary" type="button"
+                            onclick={() => applyHypothesisTactic(tactic.kind, ht.hypothesis_index)}>Apply</button>
+                        {/if}
+                      </div>
+                    </div>
+                  </article>
+                {/each}
+              </div>
+            {/each}
 
-            {#if canApplyHypothesis(selectedHypothesis)}
-              <article class="rounded-lg border p-4">
-                <div class="flex items-start justify-between gap-3">
-                  <div>
-                    <h3 class="font-semibold">{ApplyTactic.label()}</h3>
-                    <p class="mt-1 text-sm text-muted-foreground">{applyDescription(selectedHypothesis)}</p>
-                  </div>
-                  <button class="btn btn-primary shrink-0" type="button" onclick={() => applyHypothesis(selectedHypothesis)}>Apply</button>
-                </div>
-              </article>
-            {/if}
-
-            {#if canCases(selectedHypothesis)}
-              <article class="rounded-lg border p-4">
-                <div class="flex items-start justify-between gap-3">
-                  <div>
-                    <h3 class="font-semibold">{CasesTactic.label()}</h3>
-                    <p class="mt-1 text-sm text-muted-foreground">{casesDescription(selectedHypothesis)}</p>
-                  </div>
-                  <button class="btn btn-primary shrink-0" type="button" onclick={() => applyCases(selectedHypothesis)}>Apply</button>
-                </div>
-              </article>
-            {/if}
-
-            {#if canSpecializeTerm(selectedHypothesis)}
-              <article class="rounded-lg border p-4">
-                <div>
-                  <h3 class="font-semibold">{SpecializeTermTactic.label()}</h3>
-                  <p class="mt-1 text-sm text-muted-foreground">{specializeTermDescription(selectedHypothesis)}</p>
-                </div>
-                <div class="mt-3 flex gap-2">
-                  <input class="field flex-1 font-mono" bind:value={specializeTerm} placeholder="term" />
-                  <button class="btn btn-primary" type="button" disabled={!canApplySpecializeTerm(selectedHypothesis)} onclick={() => applySpecializeTerm(selectedHypothesis)}>Apply</button>
-                </div>
-              </article>
-            {/if}
-
-            {#if hasSpecializeHypothesisOptions(selectedHypothesis) && proof.goal != null}
-              <article class="rounded-lg border p-4">
-                <div>
-                  <h3 class="font-semibold">{SpecializeHypothesisTactic.label()}</h3>
-                  <p class="mt-1 text-sm text-muted-foreground">Instantiate this implication with a matching hypothesis.</p>
-                </div>
-                <div class="mt-3 grid gap-2">
-                  {#each proof.goal.hypotheses as argument (argument.index)}
-                    {#if canSpecializeHypothesis(selectedHypothesis, argument.index)}
-                      <button class="choice-card text-sm" type="button" onclick={() => applySpecializeHypothesis(selectedHypothesis, argument.index)}>
-                        {specializeHypothesisDescription(selectedHypothesis, argument.index)}
-                        <span class="mt-1 block font-mono">{argument.formula.copy}</span>
-                      </button>
-                    {/if}
-                  {/each}
-                </div>
-              </article>
+            {#if proof.available_tactics.hypotheses.length === 0}
+              <p class="rounded-md border p-3 text-sm text-muted-foreground">No applicable tactics for the selected hypothesis.</p>
             {/if}
           {/if}
         </div>
@@ -368,20 +249,20 @@
 
       <section class="panel">
         <div class="panel-header">
-          <h2 class="panel-title">{proof.have_title}</h2>
-          <p class="panel-description">{proof.have_hint}</p>
+          <h2 class="panel-title">Have</h2>
+          <p class="panel-description">Introduce a separate intermediate claim.</p>
         </div>
         <div class="panel-content space-y-3">
-          {#if !HaveTactic.is_available(app)}
-            <p class="rounded-md border p-3 text-sm text-muted-foreground">{proof.have_unavailable_text}</p>
+          {#if proof.goal == null}
+            <p class="rounded-md border p-3 text-sm text-muted-foreground">Have is not available.</p>
           {:else}
             <div>
-              <h3 class="font-semibold">{HaveTactic.label()}</h3>
-              <p class="mt-1 text-sm text-muted-foreground">{HaveTactic.description(app)}</p>
+              <h3 class="font-semibold">Have</h3>
+              <p class="mt-1 text-sm text-muted-foreground">Introduce a separate intermediate claim.</p>
             </div>
             <div class="flex gap-2">
-              <input class="field flex-1 font-mono" bind:value={haveFormula} placeholder={proof.have_placeholder} />
-              <button class="btn btn-primary" type="button" disabled={!HaveTactic.can_apply(app, haveFormula)} onclick={applyHave}>{proof.have_add_label}</button>
+              <input class="field flex-1 font-mono" bind:value={haveFormula} placeholder="formula" />
+              <button class="btn btn-primary" type="button" disabled={haveFormula.trim() === ""} onclick={applyHave}>Add</button>
             </div>
           {/if}
         </div>

@@ -1,13 +1,11 @@
 use crate::{
     parser,
     syntax::{Formula, Formula::*, Goal, Term},
-    tactic::{Arg, Tactic},
+    tactic::Tactic,
 };
 use serde::{Deserialize, Serialize};
 use tsify::Tsify;
 use wasm_bindgen::prelude::*;
-
-const DEFAULT_INPUT: &str = "P, Q, P and Q -> R and S |- R";
 
 #[derive(Clone, Debug, Serialize, Deserialize, Tsify)]
 #[tsify(into_wasm_abi)]
@@ -24,41 +22,6 @@ pub struct Example {
 
 #[derive(Clone, Debug, Serialize, Deserialize, Tsify)]
 #[tsify(into_wasm_abi)]
-pub struct AppView {
-    pub home: HomeView,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    #[tsify(optional)]
-    pub proof: Option<ProofView>,
-    pub message: MessageView,
-}
-
-#[derive(Clone, Debug, Serialize, Deserialize, Tsify)]
-#[tsify(into_wasm_abi)]
-pub struct HomeView {
-    pub title: String,
-    pub subtitle: String,
-    pub description: String,
-    pub input: String,
-    pub input_label: String,
-    pub syntax_hint: String,
-    pub start_label: String,
-    pub examples_title: String,
-    pub examples_hint: String,
-    pub examples: Vec<Example>,
-}
-
-#[derive(Clone, Debug, Serialize, Deserialize, Tsify)]
-#[tsify(into_wasm_abi)]
-pub struct MessageView {
-    pub text: String,
-    pub visible: bool,
-    pub is_info: bool,
-    pub is_success: bool,
-    pub is_error: bool,
-}
-
-#[derive(Clone, Debug, Serialize, Deserialize, Tsify)]
-#[tsify(into_wasm_abi)]
 pub struct ProofView {
     pub theorem_input: String,
     pub done: bool,
@@ -70,15 +33,43 @@ pub struct ProofView {
     #[tsify(optional)]
     pub goal: Option<GoalPanelView>,
     pub selected: SelectionView,
-    pub action_title: String,
-    pub action_hint: String,
-    pub no_target_tactics_text: String,
-    pub no_hypothesis_tactics_text: String,
-    pub have_title: String,
-    pub have_hint: String,
-    pub have_placeholder: String,
-    pub have_add_label: String,
-    pub have_unavailable_text: String,
+    pub message: MessageView,
+    pub available_tactics: AvailableTactics,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, Tsify)]
+#[tsify(into_wasm_abi)]
+pub struct AvailableTactics {
+    pub target: Vec<TacticView>,
+    pub hypotheses: Vec<HypothesisTactics>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, Tsify)]
+#[tsify(into_wasm_abi)]
+pub struct TacticView {
+    pub label: String,
+    pub description: String,
+    pub before: String,
+    pub after: String,
+    pub needs_term_input: bool,
+    pub needs_hypothesis_selection: bool,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, Tsify)]
+#[tsify(into_wasm_abi)]
+pub struct HypothesisTactics {
+    pub hypothesis_index: usize,
+    pub tactics: Vec<HypothesisTacticView>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, Tsify)]
+#[tsify(into_wasm_abi)]
+pub struct HypothesisTacticView {
+    pub kind: String,
+    pub label: String,
+    pub description: String,
+    pub before: String,
+    pub after: String,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, Tsify)]
@@ -141,550 +132,14 @@ pub struct SelectionView {
     pub hypothesis_index: Option<usize>,
 }
 
-#[wasm_bindgen]
-pub struct App {
-    state: AppState,
-}
-
-#[derive(Clone, Debug)]
-struct AppState {
-    screen: Screen,
-    home_input: String,
-    message: Message,
-}
-
-#[derive(Clone, Debug)]
-enum Screen {
-    Home,
-    Proof(State),
-}
-
-#[wasm_bindgen]
-impl App {
-    #[wasm_bindgen(constructor)]
-    pub fn new() -> Self {
-        Self {
-            state: AppState {
-                screen: Screen::Home,
-                home_input: DEFAULT_INPUT.into(),
-                message: Message::info("Enter a theorem or choose an example."),
-            },
-        }
-    }
-
-    pub fn view(&self) -> AppView {
-        self.state.view()
-    }
-
-    pub fn set_input(&mut self, input: &str) -> AppView {
-        self.state.set_input(input);
-        self.view()
-    }
-
-    pub fn start_proof(&mut self, input: &str) -> AppView {
-        self.state.start_proof(input);
-        self.view()
-    }
-
-    pub fn choose_example(&mut self, index: usize) -> AppView {
-        self.state.choose_example(index);
-        self.view()
-    }
-
-    pub fn open_home(&mut self) -> AppView {
-        self.state.open_home();
-        self.view()
-    }
-
-    pub fn select_target(&mut self) -> AppView {
-        self.state.apply_to_proof(State::select_target);
-        self.view()
-    }
-
-    pub fn select_hypothesis(&mut self, index: usize) -> AppView {
-        self.state
-            .apply_to_proof(|proof| proof.select_hypothesis(index));
-        self.view()
-    }
-
-    pub fn undo(&mut self) -> AppView {
-        self.state.apply_to_proof(State::undo);
-        self.view()
-    }
-
-    pub fn redo(&mut self) -> AppView {
-        self.state.apply_to_proof(State::redo);
-        self.view()
-    }
-
-    pub fn previous_goal(&mut self) -> AppView {
-        self.state.apply_to_proof(State::previous_goal);
-        self.view()
-    }
-
-    pub fn next_goal(&mut self) -> AppView {
-        self.state.apply_to_proof(State::next_goal);
-        self.view()
-    }
-
-    pub fn apply_intro(&mut self) -> AppView {
-        self.state.apply_tactic(Tactic::Intro);
-        self.view()
-    }
-
-    pub fn apply_assumption(&mut self, hypothesis_index: usize) -> AppView {
-        self.state.apply_tactic(Tactic::Assumption {
-            hyp: hypothesis_index,
-        });
-        self.view()
-    }
-
-    pub fn apply_hypothesis(&mut self, hypothesis_index: usize) -> AppView {
-        self.state.apply_tactic(Tactic::Apply {
-            hyp: hypothesis_index,
-        });
-        self.view()
-    }
-
-    pub fn apply_constructor(&mut self) -> AppView {
-        self.state.apply_tactic(Tactic::Constructor);
-        self.view()
-    }
-
-    pub fn apply_left(&mut self) -> AppView {
-        self.state.apply_tactic(Tactic::Left);
-        self.view()
-    }
-
-    pub fn apply_right(&mut self) -> AppView {
-        self.state.apply_tactic(Tactic::Right);
-        self.view()
-    }
-
-    pub fn apply_cases(&mut self, hypothesis_index: usize) -> AppView {
-        self.state.apply_tactic(Tactic::Cases {
-            hyp: hypothesis_index,
-        });
-        self.view()
-    }
-
-    pub fn apply_exists(&mut self, term: &str) -> AppView {
-        self.state.apply_exists(term);
-        self.view()
-    }
-
-    pub fn apply_specialize_with_term(&mut self, hypothesis_index: usize, term: &str) -> AppView {
-        self.state
-            .apply_specialize_with_term(hypothesis_index, term);
-        self.view()
-    }
-
-    pub fn apply_specialize_with_hypothesis(
-        &mut self,
-        hypothesis_index: usize,
-        argument_index: usize,
-    ) -> AppView {
-        self.state.apply_tactic(Tactic::Specialize {
-            hyp: hypothesis_index,
-            arg: Arg::Hyp(argument_index),
-        });
-        self.view()
-    }
-
-    pub fn apply_have(&mut self, formula: &str) -> AppView {
-        self.state.apply_have(formula);
-        self.view()
-    }
-
-    pub fn apply_exfalso(&mut self) -> AppView {
-        self.state.apply_tactic(Tactic::Exfalso);
-        self.view()
-    }
-
-    pub fn apply_by_contra(&mut self) -> AppView {
-        self.state.apply_tactic(Tactic::ByContra);
-        self.view()
-    }
-}
-
-impl App {
-    fn current_goal(&self) -> Option<&Goal> {
-        match &self.state.screen {
-            Screen::Home => None,
-            Screen::Proof(proof) => proof.current_goal(),
-        }
-    }
-
-    fn current_hypothesis(&self, hypothesis_index: usize) -> Option<(&Goal, &Formula)> {
-        let goal = self.current_goal()?;
-        let hypothesis = goal.hypotheses.get(hypothesis_index)?;
-        Some((goal, hypothesis))
-    }
-
-    fn apply_tactic_and_view(&mut self, tactic: Tactic) -> AppView {
-        self.state.apply_tactic(tactic);
-        self.view()
-    }
-
-    fn apply_exists_and_view(&mut self, term: &str) -> AppView {
-        self.state.apply_exists(term);
-        self.view()
-    }
-
-    fn apply_specialize_with_term_and_view(
-        &mut self,
-        hypothesis_index: usize,
-        term: &str,
-    ) -> AppView {
-        self.state
-            .apply_specialize_with_term(hypothesis_index, term);
-        self.view()
-    }
-
-    fn apply_have_and_view(&mut self, formula: &str) -> AppView {
-        self.state.apply_have(formula);
-        self.view()
-    }
-}
-
-#[wasm_bindgen]
-pub struct IntroTactic;
-
-#[wasm_bindgen]
-impl IntroTactic {
-    pub fn label() -> String {
-        "Intro".into()
-    }
-
-    pub fn description(_app: &App) -> String {
-        "Introduce an implication, universal quantifier, or negation.".into()
-    }
-
-    pub fn is_enabled(app: &App) -> bool {
-        app.current_goal()
-            .is_some_and(|goal| matches!(&goal.target, To(..) | All { .. } | Not(_)))
-    }
-
-    pub fn apply(app: &mut App) -> AppView {
-        app.apply_tactic_and_view(Tactic::Intro)
-    }
-}
-
-#[wasm_bindgen]
-pub struct AssumptionTactic;
-
-#[wasm_bindgen]
-impl AssumptionTactic {
-    pub fn label() -> String {
-        "Assumption".into()
-    }
-
-    pub fn description(_app: &App, _hypothesis_index: usize) -> String {
-        "Close the goal with this matching hypothesis.".into()
-    }
-
-    pub fn is_enabled(app: &App, hypothesis_index: usize) -> bool {
-        app.current_hypothesis(hypothesis_index)
-            .is_some_and(|(goal, hypothesis)| hypothesis == &goal.target)
-    }
-
-    pub fn apply(app: &mut App, hypothesis_index: usize) -> AppView {
-        app.apply_tactic_and_view(Tactic::Assumption {
-            hyp: hypothesis_index,
-        })
-    }
-}
-
-#[wasm_bindgen]
-pub struct ApplyTactic;
-
-#[wasm_bindgen]
-impl ApplyTactic {
-    pub fn label() -> String {
-        "Apply".into()
-    }
-
-    pub fn description(_app: &App, _hypothesis_index: usize) -> String {
-        "Apply this implication, negation, or equivalence hypothesis to the target.".into()
-    }
-
-    pub fn is_enabled(app: &App, hypothesis_index: usize) -> bool {
-        app.current_hypothesis(hypothesis_index)
-            .is_some_and(|(goal, hypothesis)| can_apply(hypothesis, &goal.target))
-    }
-
-    pub fn apply(app: &mut App, hypothesis_index: usize) -> AppView {
-        app.apply_tactic_and_view(Tactic::Apply {
-            hyp: hypothesis_index,
-        })
-    }
-}
-
-#[wasm_bindgen]
-pub struct ConstructorTactic;
-
-#[wasm_bindgen]
-impl ConstructorTactic {
-    pub fn label() -> String {
-        "Constructor".into()
-    }
-
-    pub fn description(_app: &App) -> String {
-        "Split a conjunction or equivalence target into subgoals.".into()
-    }
-
-    pub fn is_enabled(app: &App) -> bool {
-        app.current_goal()
-            .is_some_and(|goal| matches!(&goal.target, And(..) | Iff(..)))
-    }
-
-    pub fn apply(app: &mut App) -> AppView {
-        app.apply_tactic_and_view(Tactic::Constructor)
-    }
-}
-
-#[wasm_bindgen]
-pub struct LeftTactic;
-
-#[wasm_bindgen]
-impl LeftTactic {
-    pub fn label() -> String {
-        "Left".into()
-    }
-
-    pub fn description(_app: &App) -> String {
-        "Prove the left side of a disjunction target.".into()
-    }
-
-    pub fn is_enabled(app: &App) -> bool {
-        app.current_goal()
-            .is_some_and(|goal| matches!(&goal.target, Or(..)))
-    }
-
-    pub fn apply(app: &mut App) -> AppView {
-        app.apply_tactic_and_view(Tactic::Left)
-    }
-}
-
-#[wasm_bindgen]
-pub struct RightTactic;
-
-#[wasm_bindgen]
-impl RightTactic {
-    pub fn label() -> String {
-        "Right".into()
-    }
-
-    pub fn description(_app: &App) -> String {
-        "Prove the right side of a disjunction target.".into()
-    }
-
-    pub fn is_enabled(app: &App) -> bool {
-        app.current_goal()
-            .is_some_and(|goal| matches!(&goal.target, Or(..)))
-    }
-
-    pub fn apply(app: &mut App) -> AppView {
-        app.apply_tactic_and_view(Tactic::Right)
-    }
-}
-
-#[wasm_bindgen]
-pub struct CasesTactic;
-
-#[wasm_bindgen]
-impl CasesTactic {
-    pub fn label() -> String {
-        "Cases".into()
-    }
-
-    pub fn description(_app: &App, _hypothesis_index: usize) -> String {
-        "Split this hypothesis or eliminate falsehood.".into()
-    }
-
-    pub fn is_enabled(app: &App, hypothesis_index: usize) -> bool {
-        app.current_hypothesis(hypothesis_index)
-            .is_some_and(|(_, hypothesis)| {
-                matches!(hypothesis, And(..) | Or(..) | Iff(..) | Ex { .. } | False)
-            })
-    }
-
-    pub fn apply(app: &mut App, hypothesis_index: usize) -> AppView {
-        app.apply_tactic_and_view(Tactic::Cases {
-            hyp: hypothesis_index,
-        })
-    }
-}
-
-#[wasm_bindgen]
-pub struct ExistsTactic;
-
-#[wasm_bindgen]
-impl ExistsTactic {
-    pub fn label() -> String {
-        "Exists".into()
-    }
-
-    pub fn description(_app: &App) -> String {
-        "Provide a witness for the existential target.".into()
-    }
-
-    pub fn is_available(app: &App) -> bool {
-        app.current_goal()
-            .is_some_and(|goal| matches!(&goal.target, Ex { .. }))
-    }
-
-    pub fn can_apply(app: &App, term: &str) -> bool {
-        Self::is_available(app) && parse_term_string(term).is_ok()
-    }
-
-    pub fn apply(app: &mut App, term: &str) -> AppView {
-        app.apply_exists_and_view(term)
-    }
-}
-
-#[wasm_bindgen]
-pub struct SpecializeTermTactic;
-
-#[wasm_bindgen]
-impl SpecializeTermTactic {
-    pub fn label() -> String {
-        "Specialize".into()
-    }
-
-    pub fn description(_app: &App, _hypothesis_index: usize) -> String {
-        "Instantiate this universal hypothesis with a term.".into()
-    }
-
-    pub fn is_available(app: &App, hypothesis_index: usize) -> bool {
-        app.current_hypothesis(hypothesis_index)
-            .is_some_and(|(_, hypothesis)| matches!(hypothesis, All { .. }))
-    }
-
-    pub fn can_apply(app: &App, hypothesis_index: usize, term: &str) -> bool {
-        Self::is_available(app, hypothesis_index) && parse_term_string(term).is_ok()
-    }
-
-    pub fn apply(app: &mut App, hypothesis_index: usize, term: &str) -> AppView {
-        app.apply_specialize_with_term_and_view(hypothesis_index, term)
-    }
-}
-
-#[wasm_bindgen]
-pub struct SpecializeHypothesisTactic;
-
-#[wasm_bindgen]
-impl SpecializeHypothesisTactic {
-    pub fn label() -> String {
-        "Specialize".into()
-    }
-
-    pub fn description(_app: &App, _hypothesis_index: usize, argument_index: usize) -> String {
-        format!(
-            "Instantiate this implication using hypothesis {}.",
-            argument_index + 1
-        )
-    }
-
-    pub fn is_enabled(app: &App, hypothesis_index: usize, argument_index: usize) -> bool {
-        let Some((goal, hypothesis)) = app.current_hypothesis(hypothesis_index) else {
-            return false;
-        };
-        let To(p, _) = hypothesis else {
-            return false;
-        };
-        goal.hypotheses
-            .get(argument_index)
-            .is_some_and(|argument| argument == p.as_ref())
-    }
-
-    pub fn has_options(app: &App, hypothesis_index: usize) -> bool {
-        app.current_goal().is_some_and(|goal| {
-            goal.hypotheses
-                .iter()
-                .enumerate()
-                .any(|(argument_index, _)| Self::is_enabled(app, hypothesis_index, argument_index))
-        })
-    }
-
-    pub fn apply(app: &mut App, hypothesis_index: usize, argument_index: usize) -> AppView {
-        app.apply_tactic_and_view(Tactic::Specialize {
-            hyp: hypothesis_index,
-            arg: Arg::Hyp(argument_index),
-        })
-    }
-}
-
-#[wasm_bindgen]
-pub struct HaveTactic;
-
-#[wasm_bindgen]
-impl HaveTactic {
-    pub fn label() -> String {
-        "Have".into()
-    }
-
-    pub fn description(_app: &App) -> String {
-        "Create a separate subgoal and add it as a later hypothesis.".into()
-    }
-
-    pub fn is_available(app: &App) -> bool {
-        app.current_goal().is_some()
-    }
-
-    pub fn can_apply(app: &App, formula: &str) -> bool {
-        Self::is_available(app) && parse_formula_string(formula).is_ok()
-    }
-
-    pub fn apply(app: &mut App, formula: &str) -> AppView {
-        app.apply_have_and_view(formula)
-    }
-}
-
-#[wasm_bindgen]
-pub struct ExfalsoTactic;
-
-#[wasm_bindgen]
-impl ExfalsoTactic {
-    pub fn label() -> String {
-        "Exfalso".into()
-    }
-
-    pub fn description(_app: &App) -> String {
-        "Reduce the current target to False.".into()
-    }
-
-    pub fn is_enabled(app: &App) -> bool {
-        app.current_goal()
-            .is_some_and(|goal| !matches!(&goal.target, False))
-    }
-
-    pub fn apply(app: &mut App) -> AppView {
-        app.apply_tactic_and_view(Tactic::Exfalso)
-    }
-}
-
-#[wasm_bindgen]
-pub struct ByContraTactic;
-
-#[wasm_bindgen]
-impl ByContraTactic {
-    pub fn label() -> String {
-        "By Contra".into()
-    }
-
-    pub fn description(_app: &App) -> String {
-        "Prove the target by contradiction.".into()
-    }
-
-    pub fn is_enabled(app: &App) -> bool {
-        app.current_goal()
-            .is_some_and(|goal| !matches!(&goal.target, False))
-    }
-
-    pub fn apply(app: &mut App) -> AppView {
-        app.apply_tactic_and_view(Tactic::ByContra)
-    }
+#[derive(Clone, Debug, Serialize, Deserialize, Tsify)]
+#[tsify(into_wasm_abi)]
+pub struct MessageView {
+    pub text: String,
+    pub visible: bool,
+    pub is_info: bool,
+    pub is_success: bool,
+    pub is_error: bool,
 }
 
 #[wasm_bindgen]
@@ -766,12 +221,8 @@ impl Message {
 #[wasm_bindgen]
 impl Game {
     /// 入力されたシーケントからゲームを作る。
-    ///
-    /// # Errors
-    ///
-    /// 入力がシーケントとして構文解析できない場合にエラーを返す。
     #[wasm_bindgen(constructor)]
-    pub fn new(input: &str) -> Result<Self, JsValue> {
+    pub fn new(input: &str) -> Result<Game, JsValue> {
         Ok(Self {
             state: State::from_input(input).map_err(to_js)?,
         })
@@ -813,26 +264,43 @@ impl Game {
     }
 
     pub fn apply_intro(&mut self) -> ProofView {
-        self.state.apply_tactic(Tactic::Intro);
+        let tactic = self.state.current_goal().map_or(Tactic::IntroTo, |goal| match &goal.target {
+            Not(_) => Tactic::IntroNot,
+            To(..) => Tactic::IntroTo,
+            All { .. } => Tactic::IntroAll,
+            _ => unreachable!(),
+        });
+        self.state.apply_tactic(tactic);
         self.proof_view()
     }
 
-    pub fn apply_assumption(&mut self, hypothesis_index: usize) -> ProofView {
-        self.state.apply_tactic(Tactic::Assumption {
-            hyp: hypothesis_index,
-        });
+    pub fn apply_assumption(&mut self) -> ProofView {
+        self.state.apply_tactic(Tactic::Assumption);
         self.proof_view()
     }
 
     pub fn apply_hypothesis(&mut self, hypothesis_index: usize) -> ProofView {
-        self.state.apply_tactic(Tactic::Apply {
-            hyp: hypothesis_index,
-        });
+        let tactic = self.goal_with_hypothesis(hypothesis_index).map_or(
+            Tactic::ApplyTo { hyp: hypothesis_index },
+            |(goal, hypothesis)| match hypothesis {
+                Not(_) => Tactic::ApplyNot { hyp: hypothesis_index },
+                Iff(p, q) if q.as_ref() == &goal.target || p.as_ref() == &goal.target => {
+                    Tactic::ApplyIff { hyp: hypothesis_index }
+                }
+                To(..) | _ => Tactic::ApplyTo { hyp: hypothesis_index },
+            },
+        );
+        self.state.apply_tactic(tactic);
         self.proof_view()
     }
 
     pub fn apply_constructor(&mut self) -> ProofView {
-        self.state.apply_tactic(Tactic::Constructor);
+        let tactic = self.state.current_goal().map_or(Tactic::ConstructorAnd, |goal| match &goal.target {
+            And(..) => Tactic::ConstructorAnd,
+            Iff(..) => Tactic::ConstructorIff,
+            _ => unreachable!(),
+        });
+        self.state.apply_tactic(tactic);
         self.proof_view()
     }
 
@@ -847,21 +315,42 @@ impl Game {
     }
 
     pub fn apply_cases(&mut self, hypothesis_index: usize) -> ProofView {
-        self.state.apply_tactic(Tactic::Cases {
-            hyp: hypothesis_index,
-        });
+        let tactic = self.goal_with_hypothesis(hypothesis_index).map_or(
+            Tactic::CasesAnd { hyp: hypothesis_index },
+            |(_, hypothesis)| match hypothesis {
+                And(..) => Tactic::CasesAnd { hyp: hypothesis_index },
+                Or(..) => Tactic::CasesOr { hyp: hypothesis_index },
+                Iff(..) => Tactic::CasesIff { hyp: hypothesis_index },
+                Ex { .. } => Tactic::CasesEx { hyp: hypothesis_index },
+                False => Tactic::CasesFalse { hyp: hypothesis_index },
+                _ => unreachable!(),
+            },
+        );
+        self.state.apply_tactic(tactic);
         self.proof_view()
     }
 
     pub fn apply_exists(&mut self, term: &str) -> ProofView {
-        self.state.apply_exists(term);
-        self.proof_view()
+        match parse_term_string(term) {
+            Ok(term) => {
+                self.state.apply_tactic(Tactic::Exists { term });
+                self.proof_view()
+            }
+            Err(_) => self.proof_view(),
+        }
     }
 
     pub fn apply_specialize_with_term(&mut self, hypothesis_index: usize, term: &str) -> ProofView {
-        self.state
-            .apply_specialize_with_term(hypothesis_index, term);
-        self.proof_view()
+        match parse_term_string(term) {
+            Ok(term) => {
+                self.state.apply_tactic(Tactic::SpecializeAll {
+                    hyp: hypothesis_index,
+                    term,
+                });
+                self.proof_view()
+            }
+            Err(_) => self.proof_view(),
+        }
     }
 
     pub fn apply_specialize_with_hypothesis(
@@ -869,16 +358,21 @@ impl Game {
         hypothesis_index: usize,
         argument_index: usize,
     ) -> ProofView {
-        self.state.apply_tactic(Tactic::Specialize {
+        self.state.apply_tactic(Tactic::SpecializeTo {
             hyp: hypothesis_index,
-            arg: Arg::Hyp(argument_index),
+            arg_hyp: argument_index,
         });
         self.proof_view()
     }
 
     pub fn apply_have(&mut self, formula: &str) -> ProofView {
-        self.state.apply_have(formula);
-        self.proof_view()
+        match parse_formula_string(formula) {
+            Ok(formula) => {
+                self.state.apply_tactic(Tactic::Have { formula });
+                self.proof_view()
+            }
+            Err(_) => self.proof_view(),
+        }
     }
 
     pub fn apply_exfalso(&mut self) -> ProofView {
@@ -890,9 +384,197 @@ impl Game {
         self.state.apply_tactic(Tactic::ByContra);
         self.proof_view()
     }
+
+    // --- Tactic availability checks (target-side) ---
+
+    pub fn can_intro(&self) -> bool {
+        self.state.current_goal().is_some_and(|goal| {
+            Tactic::IntroNot.can_apply(goal)
+                || Tactic::IntroTo.can_apply(goal)
+                || Tactic::IntroAll.can_apply(goal)
+        })
+    }
+
+    pub fn can_constructor(&self) -> bool {
+        self.state.current_goal().is_some_and(|goal| {
+            Tactic::ConstructorAnd.can_apply(goal) || Tactic::ConstructorIff.can_apply(goal)
+        })
+    }
+
+    pub fn can_left(&self) -> bool {
+        self.state.current_goal().is_some_and(|goal| {
+            matches!(&goal.target, Or(..))
+        })
+    }
+
+    pub fn can_right(&self) -> bool {
+        self.state.current_goal().is_some_and(|goal| {
+            matches!(&goal.target, Or(..))
+        })
+    }
+
+    pub fn can_exists(&self) -> bool {
+        self.state.current_goal().is_some_and(|goal| {
+            matches!(&goal.target, Ex { .. })
+        })
+    }
+
+    pub fn can_exfalso(&self) -> bool {
+        self.state.current_goal().is_some_and(|goal| goal.target != False)
+    }
+
+    pub fn can_by_contra(&self) -> bool {
+        self.state.current_goal().is_some_and(|goal| goal.target != False)
+    }
+
+    pub fn can_assumption(&self) -> bool {
+        self.state.current_goal().is_some_and(|goal| {
+            Tactic::Assumption.can_apply(goal)
+        })
+    }
+
+    // --- Tactic availability checks (hypothesis-side) ---
+
+    pub fn can_apply_hypothesis(&self, hypothesis_index: usize) -> bool {
+        self.goal_with_hypothesis(hypothesis_index).is_some_and(|(goal, hypothesis)| {
+            match hypothesis {
+                Not(_) => Tactic::ApplyNot { hyp: hypothesis_index }.can_apply(goal),
+                Iff(p, q) if q.as_ref() == &goal.target || p.as_ref() == &goal.target => {
+                    Tactic::ApplyIff { hyp: hypothesis_index }.can_apply(goal)
+                }
+                To(..) | _ => Tactic::ApplyTo { hyp: hypothesis_index }.can_apply(goal),
+            }
+        })
+    }
+
+    pub fn can_cases(&self, hypothesis_index: usize) -> bool {
+        self.goal_with_hypothesis(hypothesis_index).is_some_and(|(_, hypothesis)| {
+            match hypothesis {
+                And(..) | Or(..) | Iff(..) | Ex { .. } | False => true,
+                _ => false,
+            }
+        })
+    }
+
+    pub fn can_specialize_term(&self, hypothesis_index: usize) -> bool {
+        self.goal_with_hypothesis(hypothesis_index).is_some_and(|(_, hypothesis)| {
+            matches!(hypothesis, All { .. })
+        })
+    }
+
+    pub fn has_specialize_hypothesis_options(&self, hypothesis_index: usize) -> bool {
+        self.state.current_goal().is_some_and(|goal| {
+            let Some(To(p, _)) = goal.hypotheses.get(hypothesis_index) else {
+                return false;
+            };
+            goal.hypotheses
+                .iter()
+                .enumerate()
+                .any(|(i, h)| i != hypothesis_index && h == p.as_ref())
+        })
+    }
+
+    pub fn is_specialize_hypothesis_enabled(
+        &self,
+        hypothesis_index: usize,
+        argument_index: usize,
+    ) -> bool {
+        let Some((goal, hypothesis)) = self.goal_with_hypothesis(hypothesis_index) else {
+            return false;
+        };
+        let To(p, _) = hypothesis else {
+            return false;
+        };
+        goal.hypotheses
+            .get(argument_index)
+            .is_some_and(|a| a == p.as_ref())
+    }
+
+    // --- Descriptions ---
+
+    pub fn intro_description(&self) -> String {
+        self.state.current_goal().map_or(String::new(), |goal| match &goal.target {
+            Not(_) => Tactic::IntroNot.description().into(),
+            To(..) => Tactic::IntroTo.description().into(),
+            All { .. } => Tactic::IntroAll.description().into(),
+            _ => String::new(),
+        })
+    }
+
+    pub fn constructor_description(&self) -> String {
+        self.state.current_goal().map_or(String::new(), |goal| match &goal.target {
+            And(..) => Tactic::ConstructorAnd.description().into(),
+            Iff(..) => Tactic::ConstructorIff.description().into(),
+            _ => String::new(),
+        })
+    }
+
+    pub fn apply_hypothesis_description(&self, hypothesis_index: usize) -> String {
+        self.goal_with_hypothesis(hypothesis_index).map_or(String::new(), |(goal, hypothesis)| {
+            match hypothesis {
+                Not(_) => Tactic::ApplyNot { hyp: hypothesis_index }.description().into(),
+                Iff(p, q) if q.as_ref() == &goal.target || p.as_ref() == &goal.target => {
+                    Tactic::ApplyIff { hyp: hypothesis_index }.description().into()
+                }
+                To(..) | _ => Tactic::ApplyTo { hyp: hypothesis_index }.description().into(),
+            }
+        })
+    }
+
+    pub fn cases_description(&self, hypothesis_index: usize) -> String {
+        self.goal_with_hypothesis(hypothesis_index).map_or(String::new(), |(_, hypothesis)| {
+            match hypothesis {
+                And(..) => Tactic::CasesAnd { hyp: hypothesis_index }.description().into(),
+                Or(..) => Tactic::CasesOr { hyp: hypothesis_index }.description().into(),
+                Iff(..) => Tactic::CasesIff { hyp: hypothesis_index }.description().into(),
+                Ex { .. } => Tactic::CasesEx { hyp: hypothesis_index }.description().into(),
+                False => Tactic::CasesFalse { hyp: hypothesis_index }.description().into(),
+                _ => String::new(),
+            }
+        })
+    }
+
+    pub fn exists_description(&self) -> String {
+        Tactic::Exists { term: Term::Var("x".into()) }.description().into()
+    }
+
+    pub fn exfalso_description(&self) -> String {
+        Tactic::Exfalso.description().into()
+    }
+
+    pub fn by_contra_description(&self) -> String {
+        Tactic::ByContra.description().into()
+    }
+
+    pub fn assumption_description(&self) -> String {
+        Tactic::Assumption.description().into()
+    }
+
+    pub fn left_description(&self) -> String {
+        Tactic::Left.description().into()
+    }
+
+    pub fn right_description(&self) -> String {
+        Tactic::Right.description().into()
+    }
+
+    pub fn have_description(&self) -> String {
+        Tactic::Have { formula: Atom("P".into(), vec![]) }.description().into()
+    }
 }
 
-/// サンプル問題を返す。
+impl Game {
+    fn current_goal(&self) -> Option<&Goal> {
+        self.state.current_goal()
+    }
+
+    fn goal_with_hypothesis(&self, hypothesis_index: usize) -> Option<(&Goal, &Formula)> {
+        let goal = self.current_goal()?;
+        let hypothesis = goal.hypotheses.get(hypothesis_index)?;
+        Some((goal, hypothesis))
+    }
+}
+
 #[wasm_bindgen]
 pub fn examples() -> ExampleList {
     ExampleList {
@@ -917,113 +599,7 @@ pub fn examples() -> ExampleList {
     }
 }
 
-impl AppState {
-    fn set_input(&mut self, input: &str) {
-        self.home_input = input.to_owned();
-    }
-
-    fn start_proof(&mut self, input: &str) {
-        let normalized = normalize_input(input);
-        self.home_input = normalized.clone();
-        match State::from_input(&normalized) {
-            Ok(state) => {
-                self.screen = Screen::Proof(state);
-                self.message = Message::success("Proof started.");
-            }
-            Err(e) => {
-                self.screen = Screen::Home;
-                self.message = Message::error(e);
-            }
-        }
-    }
-
-    fn choose_example(&mut self, index: usize) {
-        let list = examples();
-        if let Some(example) = list.examples.get(index) {
-            self.start_proof(&example.input);
-        } else {
-            self.message = Message::error("Selected example does not exist.");
-        }
-    }
-
-    fn open_home(&mut self) {
-        self.screen = Screen::Home;
-        self.message = Message::info("Returned to the home screen.");
-    }
-
-    fn apply_to_proof(&mut self, op: impl FnOnce(&mut State)) {
-        match &mut self.screen {
-            Screen::Home => {
-                self.message = Message::error("Start a proof before applying proof actions.");
-            }
-            Screen::Proof(proof) => {
-                op(proof);
-                self.message = proof.message.clone();
-            }
-        }
-    }
-
-    fn apply_tactic(&mut self, tactic: Tactic) {
-        self.apply_to_proof(|proof| {
-            if let Err(e) = proof.apply_tactic(tactic) {
-                proof.message = Message::error(e);
-            }
-        });
-    }
-
-    fn apply_exists(&mut self, term: &str) {
-        match parse_term_string(term) {
-            Ok(term) => self.apply_tactic(Tactic::Exists { term }),
-            Err(e) => self.message = Message::error(e),
-        }
-    }
-
-    fn apply_specialize_with_term(&mut self, hypothesis_index: usize, term: &str) {
-        match parse_term_string(term) {
-            Ok(term) => self.apply_tactic(Tactic::Specialize {
-                hyp: hypothesis_index,
-                arg: Arg::Term(term),
-            }),
-            Err(e) => self.message = Message::error(e),
-        }
-    }
-
-    fn apply_have(&mut self, formula: &str) {
-        match parse_formula_string(formula) {
-            Ok(formula) => self.apply_tactic(Tactic::Have { formula }),
-            Err(e) => self.message = Message::error(e),
-        }
-    }
-
-    fn view(&self) -> AppView {
-        AppView {
-            home: self.home_view(),
-            proof: match &self.screen {
-                Screen::Home => None,
-                Screen::Proof(proof) => Some(proof.proof_view()),
-            },
-            message: self.message.view(),
-        }
-    }
-
-    fn home_view(&self) -> HomeView {
-        HomeView {
-            title: "Axiom Factory".into(),
-            subtitle: "Build proofs by applying tactics.".into(),
-            description: "Enter a propositional sequent or choose an example. Rust owns the game state and returns a renderable view model.".into(),
-            input: self.home_input.clone(),
-            input_label: "Theorem".into(),
-            syntax_hint: "Use ASCII syntax such as P, P -> Q |- Q.".into(),
-            start_label: "Start proof".into(),
-            examples_title: "Examples".into(),
-            examples_hint: "Choose one to open the proof screen.".into(),
-            examples: examples().examples,
-        }
-    }
-}
-
 impl State {
-    /// 入力文字列から状態を作る。
     fn from_input(input: &str) -> Result<Self, String> {
         let normalized = normalize_input(input);
         let (hyp_str, target_str) = normalized.split_once("|-").unwrap_or(("", &normalized));
@@ -1051,7 +627,6 @@ impl State {
         })
     }
 
-    /// 現在の状態を保存用フレームに変換する。
     fn frame(&self) -> Frame {
         Frame {
             theorem_input: self.theorem_input.clone(),
@@ -1061,7 +636,6 @@ impl State {
         }
     }
 
-    /// 保存用フレームを現在状態に復元する。
     fn restore(&mut self, frame: Frame) {
         self.theorem_input = frame.theorem_input;
         self.goals = frame.goals;
@@ -1092,18 +666,237 @@ impl State {
             goal_nav: self.goal_nav_view(),
             goal: self.current_goal().map(|goal| self.goal_panel_view(goal)),
             selected: self.selection_view(),
-            action_title: self.selection_view().label,
-            action_hint:
-                "Tactics are Rust methods. This panel only calls applicable static tactic APIs."
-                    .into(),
-            no_target_tactics_text: "No applicable target tactics.".into(),
-            no_hypothesis_tactics_text: "No applicable tactics for the selected hypothesis.".into(),
-            have_title: "Have".into(),
-            have_hint: "Introduce a separate intermediate claim.".into(),
-            have_placeholder: "formula".into(),
-            have_add_label: "Add".into(),
-            have_unavailable_text: "Have is not available.".into(),
+            message: self.message.view(),
+            available_tactics: self.available_tactics(),
         }
+    }
+
+    fn available_tactics(&self) -> AvailableTactics {
+        let Some(goal) = self.current_goal() else {
+            return AvailableTactics {
+                target: vec![],
+                hypotheses: vec![],
+            };
+        };
+
+        let mut target = vec![];
+
+        // Assumption
+        if Tactic::Assumption.can_apply(goal) {
+            target.push(TacticView {
+                label: Tactic::Assumption.label().into(),
+                description: Tactic::Assumption.description().into(),
+                before: Tactic::Assumption.before(goal),
+                after: Tactic::Assumption.after(goal),
+                needs_term_input: false,
+                needs_hypothesis_selection: false,
+            });
+        }
+
+        // Intro
+        if Tactic::IntroNot.can_apply(goal) {
+            target.push(TacticView {
+                label: Tactic::IntroNot.label().into(),
+                description: Tactic::IntroNot.description().into(),
+                before: Tactic::IntroNot.before(goal),
+                after: Tactic::IntroNot.after(goal),
+                needs_term_input: false,
+                needs_hypothesis_selection: false,
+            });
+        } else if Tactic::IntroTo.can_apply(goal) {
+            target.push(TacticView {
+                label: Tactic::IntroTo.label().into(),
+                description: Tactic::IntroTo.description().into(),
+                before: Tactic::IntroTo.before(goal),
+                after: Tactic::IntroTo.after(goal),
+                needs_term_input: false,
+                needs_hypothesis_selection: false,
+            });
+        } else if Tactic::IntroAll.can_apply(goal) {
+            target.push(TacticView {
+                label: Tactic::IntroAll.label().into(),
+                description: Tactic::IntroAll.description().into(),
+                before: Tactic::IntroAll.before(goal),
+                after: Tactic::IntroAll.after(goal),
+                needs_term_input: false,
+                needs_hypothesis_selection: false,
+            });
+        }
+
+        // Constructor
+        if Tactic::ConstructorAnd.can_apply(goal) {
+            target.push(TacticView {
+                label: Tactic::ConstructorAnd.label().into(),
+                description: Tactic::ConstructorAnd.description().into(),
+                before: Tactic::ConstructorAnd.before(goal),
+                after: Tactic::ConstructorAnd.after(goal),
+                needs_term_input: false,
+                needs_hypothesis_selection: false,
+            });
+        } else if Tactic::ConstructorIff.can_apply(goal) {
+            target.push(TacticView {
+                label: Tactic::ConstructorIff.label().into(),
+                description: Tactic::ConstructorIff.description().into(),
+                before: Tactic::ConstructorIff.before(goal),
+                after: Tactic::ConstructorIff.after(goal),
+                needs_term_input: false,
+                needs_hypothesis_selection: false,
+            });
+        }
+
+        // Left / Right
+        if matches!(&goal.target, Or(..)) {
+            target.push(TacticView {
+                label: Tactic::Left.label().into(),
+                description: Tactic::Left.description().into(),
+                before: Tactic::Left.before(goal),
+                after: Tactic::Left.after(goal),
+                needs_term_input: false,
+                needs_hypothesis_selection: false,
+            });
+            target.push(TacticView {
+                label: Tactic::Right.label().into(),
+                description: Tactic::Right.description().into(),
+                before: Tactic::Right.before(goal),
+                after: Tactic::Right.after(goal),
+                needs_term_input: false,
+                needs_hypothesis_selection: false,
+            });
+        }
+
+        // Exists
+        if matches!(&goal.target, Ex { .. }) {
+            target.push(TacticView {
+                label: Tactic::Exists { term: Term::Var("x".into()) }.label().into(),
+                description: Tactic::Exists { term: Term::Var("x".into()) }.description().into(),
+                before: Tactic::Exists { term: Term::Var("x".into()) }.before(goal),
+                after: Tactic::Exists { term: Term::Var("x".into()) }.after(goal),
+                needs_term_input: true,
+                needs_hypothesis_selection: false,
+            });
+        }
+
+        // Exfalso
+        if goal.target != False {
+            target.push(TacticView {
+                label: Tactic::Exfalso.label().into(),
+                description: Tactic::Exfalso.description().into(),
+                before: Tactic::Exfalso.before(goal),
+                after: Tactic::Exfalso.after(goal),
+                needs_term_input: false,
+                needs_hypothesis_selection: false,
+            });
+        }
+
+        // ByContra
+        if goal.target != False {
+            target.push(TacticView {
+                label: Tactic::ByContra.label().into(),
+                description: Tactic::ByContra.description().into(),
+                before: Tactic::ByContra.before(goal),
+                after: Tactic::ByContra.after(goal),
+                needs_term_input: false,
+                needs_hypothesis_selection: false,
+            });
+        }
+
+        // Hypothesis tactics per hypothesis
+        let hypotheses: Vec<HypothesisTactics> = if matches!(self.selected, Selection::Target) {
+            vec![]
+        } else {
+            goal.hypotheses
+                .iter()
+                .enumerate()
+                .filter_map(|(i, hyp)| {
+                    let mut tactics = vec![];
+
+                    // Apply
+                    let apply_tactic: Option<Tactic> = match hyp {
+                        Not(_) => Some(Tactic::ApplyNot { hyp: i }),
+                        Iff(p, q) if q.as_ref() == &goal.target || p.as_ref() == &goal.target => {
+                            Some(Tactic::ApplyIff { hyp: i })
+                        }
+                        To(..) => Some(Tactic::ApplyTo { hyp: i }),
+                        _ => None,
+                    };
+                    if let Some(tactic) = apply_tactic {
+                        if tactic.can_apply(goal) {
+                            tactics.push(HypothesisTacticView {
+                                kind: "apply".into(),
+                                label: tactic.label().into(),
+                                description: tactic.description().into(),
+                                before: tactic.before(goal),
+                                after: tactic.after(goal),
+                            });
+                        }
+                    }
+
+                    // Cases
+                    let cases_tactic: Option<Tactic> = match hyp {
+                        And(..) => Some(Tactic::CasesAnd { hyp: i }),
+                        Or(..) => Some(Tactic::CasesOr { hyp: i }),
+                        Iff(..) => Some(Tactic::CasesIff { hyp: i }),
+                        Ex { .. } => Some(Tactic::CasesEx { hyp: i }),
+                        False => Some(Tactic::CasesFalse { hyp: i }),
+                        _ => None,
+                    };
+                    if let Some(tactic) = cases_tactic {
+                        tactics.push(HypothesisTacticView {
+                            kind: "cases".into(),
+                            label: tactic.label().into(),
+                            description: tactic.description().into(),
+                            before: tactic.before(goal),
+                            after: tactic.after(goal),
+                        });
+                    }
+
+                    // SpecializeAll (∀)
+                    if matches!(hyp, All { .. }) {
+                        let tactic = Tactic::SpecializeAll {
+                            hyp: i,
+                            term: Term::Var("x".into()),
+                        };
+                        tactics.push(HypothesisTacticView {
+                            kind: "specialize_term".into(),
+                            label: tactic.label().into(),
+                            description: tactic.description().into(),
+                            before: tactic.before(goal),
+                            after: tactic.after(goal),
+                        });
+                    }
+
+                    // SpecializeTo (→ with matching hypothesis)
+                    if let To(p, _) = hyp {
+                        for (arg_i, arg_hyp) in goal.hypotheses.iter().enumerate() {
+                            if arg_i != i && arg_hyp == p.as_ref() {
+                                let tactic = Tactic::SpecializeTo {
+                                    hyp: i,
+                                    arg_hyp: arg_i,
+                                };
+                                tactics.push(HypothesisTacticView {
+                                    kind: "specialize_hypothesis".into(),
+                                    label: tactic.label().into(),
+                                    description: tactic.description().into(),
+                                    before: tactic.before(goal),
+                                    after: tactic.after(goal),
+                                });
+                            }
+                        }
+                    }
+
+                    if tactics.is_empty() {
+                        None
+                    } else {
+                        Some(HypothesisTactics {
+                            hypothesis_index: i,
+                            tactics,
+                        })
+                    }
+                })
+                .collect()
+        };
+
+        AvailableTactics { target, hypotheses }
     }
 
     fn current_goal(&self) -> Option<&Goal> {
@@ -1164,52 +957,15 @@ impl State {
         }
     }
 
-    fn apply_exists(&mut self, term: &str) {
-        match parse_term_string(term) {
-            Ok(term) => {
-                if let Err(e) = self.apply_tactic(Tactic::Exists { term }) {
-                    self.message = Message::error(e);
-                }
-            }
-            Err(e) => self.message = Message::error(e),
-        }
-    }
-
-    fn apply_specialize_with_term(&mut self, hypothesis_index: usize, term: &str) {
-        match parse_term_string(term) {
-            Ok(term) => {
-                if let Err(e) = self.apply_tactic(Tactic::Specialize {
-                    hyp: hypothesis_index,
-                    arg: Arg::Term(term),
-                }) {
-                    self.message = Message::error(e);
-                }
-            }
-            Err(e) => self.message = Message::error(e),
-        }
-    }
-
-    fn apply_have(&mut self, formula: &str) {
-        match parse_formula_string(formula) {
-            Ok(formula) => {
-                if let Err(e) = self.apply_tactic(Tactic::Have { formula }) {
-                    self.message = Message::error(e);
-                }
-            }
-            Err(e) => self.message = Message::error(e),
-        }
-    }
-
-    /// タクティクを適用する。
-    fn apply_tactic(&mut self, tactic: Tactic) -> Result<(), String> {
+    fn apply_tactic(&mut self, tactic: Tactic) {
         if self.goals.is_empty() {
             self.message = Message::info("The proof is already complete.");
-            return Ok(());
+            return;
         }
 
         let before = self.frame();
         let goal = self.goals.remove(self.current);
-        let new_goals = tactic.apply(goal)?;
+        let new_goals = tactic.apply(&goal);
         for (i, goal) in new_goals.into_iter().enumerate() {
             self.goals.insert(self.current + i, goal);
         }
@@ -1222,10 +978,8 @@ impl State {
         } else {
             Message::success(format!("Applied {}.", tactic.label()))
         };
-        Ok(())
     }
 
-    /// 直前の証明状態に戻す。
     fn undo(&mut self) {
         if let Some(frame) = self.past.pop() {
             let current = self.frame();
@@ -1237,7 +991,6 @@ impl State {
         }
     }
 
-    /// `undo` した証明状態を再適用する。
     fn redo(&mut self) {
         if let Some(frame) = self.future.pop() {
             let current = self.frame();
@@ -1266,7 +1019,6 @@ impl State {
         }
     }
 
-    /// 一つ前のゴールを現在ゴールにする。
     fn previous_goal(&mut self) {
         if self.current > 0 {
             self.current -= 1;
@@ -1277,7 +1029,6 @@ impl State {
         }
     }
 
-    /// 一つ後のゴールを現在ゴールにする。
     fn next_goal(&mut self) {
         if self.current + 1 < self.goals.len() {
             self.current += 1;
@@ -1288,7 +1039,6 @@ impl State {
         }
     }
 
-    /// 現在ゴール番号を有効範囲に収める。
     fn normalize_current(&mut self) {
         if self.goals.is_empty() {
             self.current = 0;
@@ -1307,44 +1057,6 @@ impl State {
                 self.selected = Selection::Target;
             }
         }
-    }
-}
-
-impl Tactic {
-    fn label(&self) -> &'static str {
-        match self {
-            Self::Intro => "Intro",
-            Self::Assumption { .. } => "Assumption",
-            Self::Apply { .. } => "Apply",
-            Self::Constructor => "Constructor",
-            Self::Left => "Left",
-            Self::Right => "Right",
-            Self::Cases { .. } => "Cases",
-            Self::Exists { .. } => "Exists",
-            Self::Specialize { .. } => "Specialize",
-            Self::Have { .. } => "Have",
-            Self::Exfalso => "Exfalso",
-            Self::ByContra => "By Contra",
-        }
-    }
-}
-
-/// 選択された仮定が `apply` 可能かを返す。
-fn can_apply(formula: &Formula, target: &Formula) -> bool {
-    match formula {
-        To(_, q) | Iff(_, q) if q.as_ref() == target => true,
-        Iff(p, _) if p.as_ref() == target => true,
-        Not(_) if target == &False => true,
-        False
-        | Atom(..)
-        | Eq(..)
-        | Not(_)
-        | And(..)
-        | Or(..)
-        | All { .. }
-        | Ex { .. }
-        | To(..)
-        | Iff(..) => false,
     }
 }
 
@@ -1376,7 +1088,6 @@ fn normalize_input(input: &str) -> String {
         .replace('⊥', "false")
 }
 
-/// エラーを JS へ渡す。
 fn to_js(e: impl ToString) -> JsValue {
     JsValue::from_str(&e.to_string())
 }
