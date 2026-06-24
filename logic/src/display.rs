@@ -158,12 +158,67 @@ pub fn fresh(base: &str, avoid: &HashSet<Id>) -> Id {
 
 #[cfg(test)]
 mod tests {
-    use crate::parser::parse_formula;
+    use crate::parser::{parse_formula, parse_term};
+
+    // --- Term ---
+
+    #[test]
+    fn test_display_term_variable() {
+        assert_eq!(parse_term("x").unwrap().to_string(), "x");
+    }
+
+    #[test]
+    fn test_display_term_unary_function() {
+        assert_eq!(parse_term("f(x)").unwrap().to_string(), "f(x)");
+    }
+
+    #[test]
+    fn test_display_term_binary_function() {
+        assert_eq!(parse_term("f(x,y)").unwrap().to_string(), "f(x,y)");
+    }
+
+    #[test]
+    fn test_display_term_nested_function() {
+        assert_eq!(parse_term("f(g(x))").unwrap().to_string(), "f(g(x))");
+    }
+
+    #[test]
+    fn test_display_term_with_apostrophe() {
+        assert_eq!(parse_term("x'").unwrap().to_string(), "x'");
+        assert_eq!(parse_term("f(x')").unwrap().to_string(), "f(x')");
+    }
+
+    // --- False ---
+
+    #[test]
+    fn test_display_false_keyword() {
+        assert_eq!(parse_formula("false").unwrap().to_string(), r"\bot");
+    }
+
+    // --- Equality ---
 
     #[test]
     fn test_display_equality() {
         assert_eq!(parse_formula("x = y").unwrap().to_string(), "(x = y)");
     }
+
+    #[test]
+    fn test_display_equality_with_functions() {
+        assert_eq!(
+            parse_formula("f(x) = g(y)").unwrap().to_string(),
+            "(f(x) = g(y))"
+        );
+    }
+
+    #[test]
+    fn test_display_equality_nested_term() {
+        assert_eq!(
+            parse_formula("f(g(x)) = h(y)").unwrap().to_string(),
+            "(f(g(x)) = h(y))"
+        );
+    }
+
+    // --- Predicate ---
 
     #[test]
     fn test_display_predicate_no_args() {
@@ -176,13 +231,23 @@ mod tests {
     }
 
     #[test]
+    fn test_display_predicate_function_arg() {
+        assert_eq!(
+            parse_formula("P(f(x),g(y))").unwrap().to_string(),
+            "P(f(x),g(y))"
+        );
+    }
+
+    // --- Connectives ---
+
+    #[test]
     fn test_display_negation() {
         assert_eq!(parse_formula("¬P").unwrap().to_string(), r"\lnot P");
     }
 
     #[test]
-    fn test_display_implication() {
-        assert_eq!(parse_formula("P → Q").unwrap().to_string(), r"(P \to Q)");
+    fn test_display_double_negation() {
+        assert_eq!(parse_formula("¬¬P").unwrap().to_string(), r"\lnot \lnot P");
     }
 
     #[test]
@@ -196,12 +261,19 @@ mod tests {
     }
 
     #[test]
+    fn test_display_implication() {
+        assert_eq!(parse_formula("P → Q").unwrap().to_string(), r"(P \to Q)");
+    }
+
+    #[test]
     fn test_display_iff() {
         assert_eq!(
             parse_formula("P ↔ Q").unwrap().to_string(),
             r"(P \leftrightarrow Q)"
         );
     }
+
+    // --- Quantifier: Forall ---
 
     #[test]
     fn test_display_forall_single() {
@@ -210,15 +282,34 @@ mod tests {
     }
 
     #[test]
-    fn test_display_forall_multi_vars() {
-        let f = parse_formula("∀x∀y∀z P(x,y,z)").unwrap();
-        assert_eq!(f.to_string(), r"\forall x \forall y \forall z P(x,y,z)");
+    fn test_display_forall_nested() {
+        let f = parse_formula("∀x∀y P(x,y)").unwrap();
+        assert_eq!(f.to_string(), r"\forall x \forall y P(x,y)");
     }
 
     #[test]
-    fn test_display_forall_typed_single() {
+    fn test_display_forall_typed_nat() {
         let f = parse_formula("∀x:N P(x)").unwrap();
         assert_eq!(f.to_string(), r"\forall x:\mathbb{N} P(x)");
+    }
+
+    #[test]
+    fn test_display_forall_typed_int_short() {
+        let f = parse_formula("∀x:Z P(x)").unwrap();
+        assert_eq!(f.to_string(), r"\forall x:\mathbb{Z} P(x)");
+    }
+
+    #[test]
+    fn test_display_forall_typed_rat_short() {
+        let f = parse_formula("∀x:Q P(x)").unwrap();
+        assert_eq!(f.to_string(), r"\forall x:\mathbb{Q} P(x)");
+    }
+
+    #[test]
+    fn test_display_forall_typed_obj() {
+        let f = parse_formula("∀x:V P(x)").unwrap();
+        // Obj のソート注釈は表示されない
+        assert_eq!(f.to_string(), r"\forall x P(x)");
     }
 
     #[test]
@@ -231,13 +322,29 @@ mod tests {
     }
 
     #[test]
-    fn test_display_forall_multi_typed_groups() {
-        let f = parse_formula("∀x:N ∀y:N P(x,y)").unwrap();
+    fn test_display_forall_mixed_typed_groups() {
+        let f = parse_formula("∀x:N ∀y:Z P(x,y)").unwrap();
         assert_eq!(
             f.to_string(),
-            r"\forall x:\mathbb{N} \forall y:\mathbb{N} P(x,y)"
+            r"\forall x:\mathbb{N} \forall y:\mathbb{Z} P(x,y)"
         );
     }
+
+    #[test]
+    fn test_display_negation_over_forall() {
+        // ¬∀x P(x) = ¬(∀x P(x))
+        let f = parse_formula("¬∀x P(x)").unwrap();
+        assert_eq!(f.to_string(), r"\lnot \forall x P(x)");
+    }
+
+    #[test]
+    fn test_display_forall_scopes_over_to() {
+        // ∀x P(x) → Q = (∀x P(x)) → Q
+        let f = parse_formula("∀x P(x) → Q").unwrap();
+        assert_eq!(f.to_string(), r"(\forall x P(x) \to Q)");
+    }
+
+    // --- Quantifier: Exists ---
 
     #[test]
     fn test_display_exists_single() {
@@ -252,10 +359,40 @@ mod tests {
     }
 
     #[test]
-    fn test_display_forall_nested() {
-        let f = parse_formula("∀x∀y P(x,y)").unwrap();
-        assert_eq!(f.to_string(), r"\forall x \forall y P(x,y)");
+    fn test_display_exists_typed_nat() {
+        let f = parse_formula("∃x:N P(x)").unwrap();
+        assert_eq!(f.to_string(), r"\exists x:\mathbb{N} P(x)");
     }
+
+    #[test]
+    fn test_display_exists_typed_int() {
+        let f = parse_formula("∃x:Z P(x)").unwrap();
+        assert_eq!(f.to_string(), r"\exists x:\mathbb{Z} P(x)");
+    }
+
+    #[test]
+    fn test_display_exists_typed_rat() {
+        let f = parse_formula("∃x:Q P(x)").unwrap();
+        assert_eq!(f.to_string(), r"\exists x:\mathbb{Q} P(x)");
+    }
+
+    #[test]
+    fn test_display_exists_typed_obj() {
+        let f = parse_formula("∃x:V P(x)").unwrap();
+        // Obj のソート注釈は表示されない
+        assert_eq!(f.to_string(), r"\exists x P(x)");
+    }
+
+    #[test]
+    fn test_display_exists_mixed_typed() {
+        let f = parse_formula("∃x:N ∃y:Z P(x,y)").unwrap();
+        assert_eq!(
+            f.to_string(),
+            r"\exists x:\mathbb{N} \exists y:\mathbb{Z} P(x,y)"
+        );
+    }
+
+    // --- Mixed quantifiers ---
 
     #[test]
     fn test_display_mixed_quantifier_alternation() {
@@ -267,5 +404,41 @@ mod tests {
     fn test_display_complex_mixed() {
         let f = parse_formula("∀x∀y∃z P(x,y,z)").unwrap();
         assert_eq!(f.to_string(), r"\forall x \forall y \exists z P(x,y,z)");
+    }
+
+    #[test]
+    fn test_display_mixed_typed_quantifiers() {
+        let f = parse_formula("∀x:N ∃y:Z P(x,y)").unwrap();
+        assert_eq!(
+            f.to_string(),
+            r"\forall x:\mathbb{N} \exists y:\mathbb{Z} P(x,y)"
+        );
+    }
+
+    // --- Fresh variable renaming ---
+
+    #[test]
+    fn test_display_fresh_renaming() {
+        // ∀x P(x) ∧ ∀x Q(x) — 内側の x は x' にリネームされる
+        let f = parse_formula("∀x P(x) ∧ ∀x Q(x)").unwrap();
+        assert_eq!(f.to_string(), r"(\forall x P(x) \land \forall x' Q(x'))");
+    }
+
+    #[test]
+    fn test_display_fresh_renaming_multi_apostrophe() {
+        // P(x) の自由変数 x も used に含まれるため、
+        // 1つ目の ∀x は x' に、2つ目の ∀x は x'' にリネームされる
+        let f = parse_formula("P(x) ∧ ∀x Q(x) ∧ ∀x R(x)").unwrap();
+        assert_eq!(
+            f.to_string(),
+            r"(P(x) \land (\forall x' Q(x') \land \forall x'' R(x'')))"
+        );
+    }
+
+    #[test]
+    fn test_display_free_variable_preserved() {
+        // ∀x∀y P(x,y,z) — z は自由変数のまま
+        let f = parse_formula("∀x∀y P(x,y,z)").unwrap();
+        assert_eq!(f.to_string(), r"\forall x \forall y P(x,y,z)");
     }
 }
