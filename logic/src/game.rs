@@ -1,7 +1,6 @@
 use crate::{
     parser,
-    proof::Goal,
-    syntax::{Formula, Formula::*, Term},
+    syntax::{Formula, Formula::*, Goal, Term},
     tactic::{Arg, Tactic},
 };
 use serde::{Deserialize, Serialize};

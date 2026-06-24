@@ -28,3 +28,9 @@ pub enum Formula {
     All { v: Id, sort: Sort, body: Box<Self> },
     Ex { v: Id, sort: Sort, body: Box<Self> },
 }
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Goal {
+    pub hypotheses: Vec<Formula>,
+    pub target: Formula,
+}

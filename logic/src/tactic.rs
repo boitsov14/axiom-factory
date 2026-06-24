@@ -1,7 +1,4 @@
-use crate::{
-    proof::Goal,
-    syntax::{Formula, Formula::*, Term},
-};
+use crate::syntax::{Formula, Formula::*, Goal, Term};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Tactic {

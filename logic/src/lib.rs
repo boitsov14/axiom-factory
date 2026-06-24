@@ -2,7 +2,6 @@ mod display;
 mod game;
 mod open;
 mod parser;
-mod proof;
 mod syntax;
 mod tactic;
 
