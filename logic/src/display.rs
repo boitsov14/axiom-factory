@@ -143,7 +143,13 @@ impl fmt::Display for Formula {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let mut used = hashset!();
         self.ids(&mut used);
-        write!(f, "{}", self.to_text(&mut vec![], &mut used))
+        let s = self.to_text(&mut vec![], &mut used);
+        // 一番外側の括弧を削除する
+        let s = s
+            .strip_prefix('(')
+            .and_then(|s| s.strip_suffix(')'))
+            .unwrap_or(&s);
+        write!(f, "{s}")
     }
 }
 
@@ -199,14 +205,14 @@ mod tests {
 
     #[test]
     fn test_display_equality() {
-        assert_eq!(parse_formula("x = y").unwrap().to_string(), "(x = y)");
+        assert_eq!(parse_formula("x = y").unwrap().to_string(), "x = y");
     }
 
     #[test]
     fn test_display_equality_with_functions() {
         assert_eq!(
             parse_formula("f(x) = g(y)").unwrap().to_string(),
-            "(f(x) = g(y))"
+            "f(x) = g(y)"
         );
     }
 
@@ -214,7 +220,7 @@ mod tests {
     fn test_display_equality_nested_term() {
         assert_eq!(
             parse_formula("f(g(x)) = h(y)").unwrap().to_string(),
-            "(f(g(x)) = h(y))"
+            "f(g(x)) = h(y)"
         );
     }
 
@@ -252,24 +258,24 @@ mod tests {
 
     #[test]
     fn test_display_conjunction() {
-        assert_eq!(parse_formula("P ∧ Q").unwrap().to_string(), r"(P \land Q)");
+        assert_eq!(parse_formula("P ∧ Q").unwrap().to_string(), r"P \land Q");
     }
 
     #[test]
     fn test_display_disjunction() {
-        assert_eq!(parse_formula("P ∨ Q").unwrap().to_string(), r"(P \lor Q)");
+        assert_eq!(parse_formula("P ∨ Q").unwrap().to_string(), r"P \lor Q");
     }
 
     #[test]
     fn test_display_implication() {
-        assert_eq!(parse_formula("P → Q").unwrap().to_string(), r"(P \to Q)");
+        assert_eq!(parse_formula("P → Q").unwrap().to_string(), r"P \to Q");
     }
 
     #[test]
     fn test_display_iff() {
         assert_eq!(
             parse_formula("P ↔ Q").unwrap().to_string(),
-            r"(P \leftrightarrow Q)"
+            r"P \leftrightarrow Q"
         );
     }
 
@@ -341,7 +347,7 @@ mod tests {
     fn test_display_forall_scopes_over_to() {
         // ∀x P(x) → Q = (∀x P(x)) → Q
         let f = parse_formula("∀x P(x) → Q").unwrap();
-        assert_eq!(f.to_string(), r"(\forall x P(x) \to Q)");
+        assert_eq!(f.to_string(), r"\forall x P(x) \to Q");
     }
 
     // --- Quantifier: Exists ---
@@ -421,7 +427,7 @@ mod tests {
     fn test_display_fresh_renaming() {
         // ∀x P(x) ∧ ∀x Q(x) — 内側の x は x' にリネームされる
         let f = parse_formula("∀x P(x) ∧ ∀x Q(x)").unwrap();
-        assert_eq!(f.to_string(), r"(\forall x P(x) \land \forall x' Q(x'))");
+        assert_eq!(f.to_string(), r"\forall x P(x) \land \forall x' Q(x')");
     }
 
     #[test]
@@ -431,7 +437,7 @@ mod tests {
         let f = parse_formula("P(x) ∧ ∀x Q(x) ∧ ∀x R(x)").unwrap();
         assert_eq!(
             f.to_string(),
-            r"(P(x) \land (\forall x' Q(x') \land \forall x'' R(x'')))"
+            r"P(x) \land (\forall x' Q(x') \land \forall x'' R(x''))"
         );
     }
 
