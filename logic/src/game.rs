@@ -356,7 +356,7 @@ impl Game {
     pub fn apply_exists(&mut self, term: &str) -> ProofView {
         match parse_term_string(term) {
             Ok(term) => {
-                self.state.apply_tactic(Tactic::Exists { term });
+                self.state.apply_tactic(Tactic::Exists { t: term });
                 self.proof_view()
             }
             Err(_) => self.proof_view(),
@@ -368,7 +368,7 @@ impl Game {
             Ok(term) => {
                 self.state.apply_tactic(Tactic::SpecializeAll {
                     i: hypothesis_index,
-                    term,
+                    t: term,
                 });
                 self.proof_view()
             }
@@ -390,7 +390,7 @@ impl Game {
     pub fn apply_have(&mut self, formula: &str) -> ProofView {
         match parse_formula_string(formula) {
             Ok(formula) => {
-                self.state.apply_tactic(Tactic::Have { formula });
+                self.state.apply_tactic(Tactic::Have { fml: formula });
                 self.proof_view()
             }
             Err(_) => self.proof_view(),
@@ -598,7 +598,7 @@ impl Game {
 
     pub fn exists_description(&self) -> String {
         Tactic::Exists {
-            term: Term::Var("x".into()),
+            t: Term::Var("x".into()),
         }
         .description()
         .into()
@@ -626,7 +626,7 @@ impl Game {
 
     pub fn have_description(&self) -> String {
         Tactic::Have {
-            formula: Atom("P".into(), vec![]),
+            fml: Atom("P".into(), vec![]),
         }
         .description()
         .into()
@@ -838,21 +838,21 @@ impl State {
         if matches!(&goal.target, Ex { .. }) {
             target.push(TacticView {
                 label: Tactic::Exists {
-                    term: Term::Var("x".into()),
+                    t: Term::Var("x".into()),
                 }
                 .label()
                 .into(),
                 description: Tactic::Exists {
-                    term: Term::Var("x".into()),
+                    t: Term::Var("x".into()),
                 }
                 .description()
                 .into(),
                 before: Tactic::Exists {
-                    term: Term::Var("x".into()),
+                    t: Term::Var("x".into()),
                 }
                 .before(goal),
                 after: Tactic::Exists {
-                    term: Term::Var("x".into()),
+                    t: Term::Var("x".into()),
                 }
                 .after(goal),
                 needs_term_input: true,
@@ -937,7 +937,7 @@ impl State {
                     if matches!(hyp, All { .. }) {
                         let tactic = Tactic::SpecializeAll {
                             i,
-                            term: Term::Var("x".into()),
+                            t: Term::Var("x".into()),
                         };
                         tactics.push(HypothesisTacticView {
                             kind: "specialize_term".into(),

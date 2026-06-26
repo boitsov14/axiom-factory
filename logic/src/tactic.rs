@@ -1,5 +1,9 @@
-use crate::syntax::{Formula, Formula::*, Goal, Term};
+use crate::{
+    ids::fresh,
+    syntax::{Formula, Formula::*, Goal, Term},
+};
 use Tactic::*;
+use std::collections::HashSet;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Tactic {
@@ -10,7 +14,7 @@ pub enum Tactic {
     ConstructorIff,
     Left,
     Right,
-    Exists { term: Term },
+    Exists { t: Term },
     Exfalso,
     ByContra,
     Assumption,
@@ -21,9 +25,9 @@ pub enum Tactic {
     CasesOr { i: usize },
     CasesIff { i: usize },
     CasesEx { i: usize },
-    SpecializeAll { i: usize, term: Term },
+    SpecializeAll { i: usize, t: Term },
     SpecializeTo { i: usize },
-    Have { formula: Formula },
+    Have { fml: Formula },
 }
 
 impl Tactic {
@@ -49,10 +53,14 @@ impl Tactic {
                 let To(p, q) = &goal.target else {
                     unreachable!()
                 };
-                let mut next = goal.clone();
-                next.hypotheses.push(*p.clone());
-                next.target = *q.clone();
-                vec![next]
+                vec![Goal {
+                    hypotheses: {
+                        let mut h = goal.hypotheses.clone();
+                        h.push(*p.clone());
+                        h
+                    },
+                    target: *q.clone(),
+                }]
             }
 
             // `⊢ ∀x P(x)` を `⊢ P(x)` に変換
@@ -60,11 +68,17 @@ impl Tactic {
                 let All { v, body, .. } = &goal.target else {
                     unreachable!()
                 };
+                let mut used = HashSet::new();
+                for h in &goal.hypotheses {
+                    h.ids(&mut used);
+                }
+                let x = fresh(v, &used);
                 let mut p = *body.clone();
-                p.open(&Term::Var(v.clone()));
-                let mut next = goal.clone();
-                next.target = p;
-                vec![next]
+                p.open(&Term::Var(x));
+                vec![Goal {
+                    hypotheses: goal.hypotheses.clone(),
+                    target: p,
+                }]
             }
 
             // `⊢ P ∧ Q` を `⊢ P` と `⊢ Q` に分割
@@ -132,12 +146,12 @@ impl Tactic {
             }
 
             // `⊢ ∃x P(x)` を `⊢ P(t)` に変換
-            Exists { term } => {
+            Exists { t } => {
                 let Ex { body, .. } = &goal.target else {
                     unreachable!()
                 };
                 let mut p = *body.clone();
-                p.open(term);
+                p.open(t);
                 vec![Goal {
                     hypotheses: goal.hypotheses.clone(),
                     target: p,
@@ -155,10 +169,14 @@ impl Tactic {
             // `⊢ P` を `¬P ⊢ ⊥` に変換（背理法）
             ByContra => {
                 let p = goal.target.clone();
-                let mut next = goal.clone();
-                next.hypotheses.push(Not(Box::new(p)));
-                next.target = False;
-                vec![next]
+                vec![Goal {
+                    hypotheses: {
+                        let mut h = goal.hypotheses.clone();
+                        h.push(Not(Box::new(p)));
+                        h
+                    },
+                    target: False,
+                }]
             }
 
             // 仮説のうち結論と一致するものがあれば証明完了
@@ -167,8 +185,8 @@ impl Tactic {
             }
 
             // `¬P ⊢ ⊥` を `¬P ⊢ P` に変換
-            ApplyNot { i: hypotheses } => {
-                let Some(Not(p)) = goal.hypotheses.get(*hypotheses) else {
+            ApplyNot { i } => {
+                let Not(p) = &goal.hypotheses[*i] else {
                     unreachable!()
                 };
                 vec![Goal {
@@ -178,8 +196,8 @@ impl Tactic {
             }
 
             // `P → Q ⊢` を `⊢ P` と `Q ⊢` に分割
-            ApplyTo { i: hypotheses } => {
-                let To(p, q) = &goal.hypotheses[*hypotheses] else {
+            ApplyTo { i } => {
+                let To(p, q) = &goal.hypotheses[*i] else {
                     unreachable!()
                 };
                 vec![
@@ -200,8 +218,8 @@ impl Tactic {
 
             // `P ↔ Q ⊢ P` を `P ↔ Q ⊢ Q に変換
             // `P ↔ Q ⊢ Q` を `P ↔ Q ⊢ P に変換
-            ApplyIff { i: hypotheses } => {
-                let Some(Iff(p, q)) = goal.hypotheses.get(*hypotheses) else {
+            ApplyIff { i } => {
+                let Some(Iff(p, q)) = goal.hypotheses.get(*i) else {
                     unreachable!()
                 };
                 if **p == goal.target {
@@ -220,84 +238,137 @@ impl Tactic {
             }
 
             // `P ∧ Q ⊢` を `P, Q ⊢` に分解
-            CasesAnd { i: hypotheses } => {
-                let Some(And(p, q)) = goal.hypotheses.get(*hypotheses) else {
+            CasesAnd { i } => {
+                let And(p, q) = &goal.hypotheses[*i] else {
                     unreachable!()
                 };
-                let mut next = goal.clone();
-                next.hypotheses.remove(*hypotheses);
-                next.hypotheses.push(*p.clone());
-                next.hypotheses.push(*q.clone());
-                vec![next]
+                vec![Goal {
+                    hypotheses: {
+                        let mut h = goal.hypotheses.clone();
+                        h.remove(*i);
+                        h.push(*p.clone());
+                        h.push(*q.clone());
+                        h
+                    },
+                    target: goal.target.clone(),
+                }]
             }
 
             // `P ∨ Q ⊢` を `P ⊢` と `Q ⊢` に場合分け
-            CasesOr { i: hypotheses } => {
-                let Some(Or(p, q)) = goal.hypotheses.get(*hypotheses) else {
+            CasesOr { i } => {
+                let Some(Or(p, q)) = goal.hypotheses.get(*i) else {
                     unreachable!()
                 };
-                let mut left = goal.clone();
-                left.hypotheses.remove(*hypotheses);
-                left.hypotheses.push(*p.clone());
-                let mut right = goal.clone();
-                right.hypotheses.remove(*hypotheses);
-                right.hypotheses.push(*q.clone());
-                vec![left, right]
+                vec![
+                    Goal {
+                        hypotheses: {
+                            let mut h = goal.hypotheses.clone();
+                            h.remove(*i);
+                            h.push(*p.clone());
+                            h
+                        },
+                        target: goal.target.clone(),
+                    },
+                    Goal {
+                        hypotheses: {
+                            let mut h = goal.hypotheses.clone();
+                            h.remove(*i);
+                            h.push(*q.clone());
+                            h
+                        },
+                        target: goal.target.clone(),
+                    },
+                ]
             }
 
             // `P ↔ Q ⊢` を `P → Q, Q → P ⊢` に分解
-            CasesIff { i: _hypotheses } => {
-                todo!()
+            CasesIff { i } => {
+                let Some(Iff(p, q)) = goal.hypotheses.get(*i) else {
+                    unreachable!()
+                };
+                vec![Goal {
+                    hypotheses: {
+                        let mut h = goal.hypotheses.clone();
+                        h.remove(*i);
+                        h.push(To(p.clone(), q.clone()));
+                        h.push(To(q.clone(), p.clone()));
+                        h
+                    },
+                    target: goal.target.clone(),
+                }]
             }
 
             // `∃x P(x) ⊢` を `P(x) ⊢` に変換
-            CasesEx { i: hypotheses } => {
-                let Some(Ex { v, body, .. }) = goal.hypotheses.get(*hypotheses) else {
+            CasesEx { i } => {
+                let Ex { v, body, .. } = &goal.hypotheses[*i] else {
                     unreachable!()
                 };
+                let mut used = HashSet::new();
+                for h in &goal.hypotheses {
+                    h.ids(&mut used);
+                }
+                goal.target.ids(&mut used);
+                let x = fresh(v, &used);
                 let mut p = *body.clone();
-                p.open(&Term::Var(v.clone()));
-                let mut next = goal.clone();
-                next.hypotheses.remove(*hypotheses);
-                next.hypotheses.push(p);
-                vec![next]
+                p.open(&Term::Var(x));
+                vec![Goal {
+                    hypotheses: {
+                        let mut h = goal.hypotheses.clone();
+                        h.remove(*i);
+                        h.push(p);
+                        h
+                    },
+                    target: goal.target.clone(),
+                }]
             }
 
             // `∀x P(x) ⊢` に `Term t` を代入し `∀x P(x), P(t) ⊢` に変換
-            SpecializeAll {
-                i: hypotheses,
-                term,
-            } => {
-                let Some(All { body, .. }) = goal.hypotheses.get(*hypotheses) else {
+            SpecializeAll { i, t } => {
+                let All { body, .. } = &goal.hypotheses[*i] else {
                     unreachable!()
                 };
                 let mut p = *body.clone();
-                p.open(term);
-                let mut next = goal.clone();
-                next.hypotheses.push(p);
-                vec![next]
+                p.open(t);
+                vec![Goal {
+                    hypotheses: {
+                        let mut h = goal.hypotheses.clone();
+                        h.push(p);
+                        h
+                    },
+                    target: goal.target.clone(),
+                }]
             }
 
             // `P → Q, P ⊢` を `P → Q, P, Q ⊢` に変換
-            SpecializeTo { i: hypotheses } => {
-                let To(_, q) = &goal.hypotheses[*hypotheses] else {
+            SpecializeTo { i } => {
+                let To(_, q) = &goal.hypotheses[*i] else {
                     unreachable!()
                 };
-                let mut next = goal.clone();
-                next.hypotheses.push(*q.clone());
-                vec![next]
+                vec![Goal {
+                    hypotheses: {
+                        let mut h = goal.hypotheses.clone();
+                        h.push(*q.clone());
+                        h
+                    },
+                    target: goal.target.clone(),
+                }]
             }
 
             // 中間命題 `P` を導入し、その証明と利用のサブゴールを作成
-            Have { formula } => {
-                let mut after = goal.clone();
-                after.hypotheses.push(formula.clone());
+            Have { fml } => {
                 vec![
                     Goal {
                         hypotheses: goal.hypotheses.clone(),
-                        target: formula.clone(),
+                        target: fml.clone(),
                     },
-                    after,
+                    Goal {
+                        hypotheses: {
+                            let mut h = goal.hypotheses.clone();
+                            h.push(fml.clone());
+                            h
+                        },
+                        target: goal.target.clone(),
+                    },
                 ]
             }
         }
@@ -339,8 +410,11 @@ impl Tactic {
             SpecializeAll { i, .. } => {
                 goal.hypotheses.get(*i).is_some_and(|h| matches!(h, All { .. }))
             }
-            SpecializeTo { i: _ } => {
-                todo!()
+            SpecializeTo { i } => {
+                let Some(To(p, _)) = goal.hypotheses.get(*i) else {
+                    return false;
+                };
+                goal.hypotheses.iter().any(|h| h == p.as_ref())
             }
             Have { .. } => true,
         }
@@ -476,12 +550,12 @@ impl Tactic {
                 };
                 format!("⊢ {q}")
             }
-            Exists { term } => {
+            Exists { t } => {
                 let Ex { body, .. } = &goal.target else {
                     unreachable!()
                 };
                 let mut p = *body.clone();
-                p.open(term);
+                p.open(t);
                 format!("⊢ {p}")
             }
             Exfalso => "⊢ ⊥".into(),
@@ -540,7 +614,7 @@ impl Tactic {
             }
             SpecializeAll {
                 i: hypotheses,
-                term,
+                t: term,
             } => {
                 let All { body, .. } = &goal.hypotheses[*hypotheses] else {
                     unreachable!()
@@ -555,8 +629,8 @@ impl Tactic {
                 };
                 format!("{q} ⊢")
             }
-            Have { formula } => {
-                format!("⊢ {}\n{} ⊢ {}", formula, formula, goal.target)
+            Have { fml } => {
+                format!("⊢ {}\n{} ⊢ {}", fml, fml, goal.target)
             }
         }
     }

@@ -1,5 +1,6 @@
 mod display;
 mod game;
+mod ids;
 mod open;
 mod parser;
 mod syntax;

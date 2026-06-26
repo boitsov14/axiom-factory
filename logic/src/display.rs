@@ -1,5 +1,7 @@
-use crate::syntax::{Formula, Formula::*, Id, Sort, Sort::*, Term, Term::*};
-use maplit::hashset;
+use crate::{
+    ids::fresh,
+    syntax::{Formula, Formula::*, Id, Sort, Sort::*, Term, Term::*},
+};
 use std::{collections::HashSet, fmt};
 
 impl Term {
@@ -16,22 +18,6 @@ impl Term {
                     .collect::<Vec<_>>()
                     .join(",");
                 format!("{f}({args})")
-            }
-        }
-    }
-
-    /// `Term` に出現する ID を集める。
-    fn ids(&self, out: &mut HashSet<Id>) {
-        match self {
-            Var(x) => {
-                out.insert(x.clone());
-            }
-            Bound(_) => {}
-            Fn(f, args) => {
-                out.insert(f.clone());
-                for t in args {
-                    t.ids(out);
-                }
             }
         }
     }
@@ -97,29 +83,6 @@ impl Formula {
             }
         }
     }
-
-    /// `Formula` に出現する ID を集める。
-    fn ids(&self, used: &mut HashSet<Id>) {
-        match self {
-            False => {}
-            Atom(pred, args) => {
-                used.insert(pred.clone());
-                for t in args {
-                    t.ids(used);
-                }
-            }
-            Eq(s, t) => {
-                s.ids(used);
-                t.ids(used);
-            }
-            Not(p) => p.ids(used),
-            And(p, q) | Or(p, q) | To(p, q) | Iff(p, q) => {
-                p.ids(used);
-                q.ids(used);
-            }
-            All { body, .. } | Ex { body, .. } => body.ids(used),
-        }
-    }
 }
 
 impl fmt::Display for Sort {
@@ -141,7 +104,7 @@ impl fmt::Display for Term {
 
 impl fmt::Display for Formula {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let mut used = hashset!();
+        let mut used = HashSet::new();
         self.ids(&mut used);
         let s = self.to_text(&mut vec![], &mut used);
         // 一番外側の括弧を削除する
@@ -151,15 +114,6 @@ impl fmt::Display for Formula {
             .unwrap_or(&s);
         write!(f, "{s}")
     }
-}
-
-/// `avoid` に含まれない ID を作る。
-pub fn fresh(base: &str, avoid: &HashSet<Id>) -> Id {
-    let mut x = base.to_owned();
-    while avoid.contains(&x) {
-        x.push('\'');
-    }
-    x
 }
 
 #[cfg(test)]
