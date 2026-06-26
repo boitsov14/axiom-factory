@@ -1,4 +1,5 @@
 use crate::syntax::{Formula, Formula::*, Goal, Term};
+use Tactic::*;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Tactic {
@@ -13,16 +14,15 @@ pub enum Tactic {
     Exfalso,
     ByContra,
     Assumption,
-    ApplyNot { hyp: usize },
-    ApplyTo { hyp: usize },
-    ApplyIff { hyp: usize },
-    CasesAnd { hyp: usize },
-    CasesOr { hyp: usize },
-    CasesIff { hyp: usize },
-    CasesEx { hyp: usize },
-    CasesFalse { hyp: usize },
-    SpecializeAll { hyp: usize, term: Term },
-    SpecializeTo { hyp: usize, arg_hyp: usize },
+    ApplyNot { i: usize },
+    ApplyTo { i: usize },
+    ApplyIff { i: usize },
+    CasesAnd { i: usize },
+    CasesOr { i: usize },
+    CasesIff { i: usize },
+    CasesEx { i: usize },
+    SpecializeAll { i: usize, term: Term },
+    SpecializeTo { i: usize },
     Have { formula: Formula },
 }
 
@@ -31,17 +31,21 @@ impl Tactic {
     /// `can_apply` で事前に適用可能性を確認すること。
     pub fn apply(&self, goal: &Goal) -> Vec<Goal> {
         match self {
-            // ターゲット `⊢ ¬P` を `P ⊢ ⊥` に変換
-            Self::IntroNot => {
+            // `⊢ ¬P` を `P ⊢ ⊥` に変換
+            IntroNot => {
                 let Not(p) = &goal.target else { unreachable!() };
-                let mut next = goal.clone();
-                next.hypotheses.push(*p.clone());
-                next.target = False;
-                vec![next]
+                vec![Goal {
+                    hypotheses: {
+                        let mut h = goal.hypotheses.clone();
+                        h.push(*p.clone());
+                        h
+                    },
+                    target: False,
+                }]
             }
 
-            // ターゲット `⊢ P → Q` を `P ⊢ Q` に変換
-            Self::IntroTo => {
+            // `⊢ P → Q` を `P ⊢ Q` に変換
+            IntroTo => {
                 let To(p, q) = &goal.target else {
                     unreachable!()
                 };
@@ -51,8 +55,8 @@ impl Tactic {
                 vec![next]
             }
 
-            // ターゲット `⊢ ∀x P(x)` を `⊢ P(x)` に変換
-            Self::IntroAll => {
+            // `⊢ ∀x P(x)` を `⊢ P(x)` に変換
+            IntroAll => {
                 let All { v, body, .. } = &goal.target else {
                     unreachable!()
                 };
@@ -63,8 +67,8 @@ impl Tactic {
                 vec![next]
             }
 
-            // ターゲット `⊢ P ∧ Q` を `⊢ P` と `⊢ Q` に分割
-            Self::ConstructorAnd => {
+            // `⊢ P ∧ Q` を `⊢ P` と `⊢ Q` に分割
+            ConstructorAnd => {
                 let And(p, q) = &goal.target else {
                     unreachable!()
                 };
@@ -80,8 +84,8 @@ impl Tactic {
                 ]
             }
 
-            // ターゲット `⊢ P ↔ Q` を `P ⊢ Q` と `Q ⊢ P` に分割
-            Self::ConstructorIff => {
+            // `⊢ P ↔ Q` を `P ⊢ Q` と `Q ⊢ P` に分割
+            ConstructorIff => {
                 let Iff(p, q) = &goal.target else {
                     unreachable!()
                 };
@@ -105,8 +109,8 @@ impl Tactic {
                 ]
             }
 
-            // ターゲット `⊢ P ∨ Q` から左 `⊢ P` を選択
-            Self::Left => {
+            // `⊢ P ∨ Q` を `⊢ P` に変換
+            Left => {
                 let Or(p, _) = &goal.target else {
                     unreachable!()
                 };
@@ -116,8 +120,8 @@ impl Tactic {
                 }]
             }
 
-            // ターゲット `⊢ P ∨ Q` から右 `⊢ Q` を選択
-            Self::Right => {
+            // `⊢ P ∨ Q` を `⊢ Q` に変換
+            Right => {
                 let Or(_, q) = &goal.target else {
                     unreachable!()
                 };
@@ -127,8 +131,8 @@ impl Tactic {
                 }]
             }
 
-            // ターゲット `⊢ ∃x P(x)` を `⊢ P(t)` に変換
-            Self::Exists { term } => {
+            // `⊢ ∃x P(x)` を `⊢ P(t)` に変換
+            Exists { term } => {
                 let Ex { body, .. } = &goal.target else {
                     unreachable!()
                 };
@@ -140,18 +144,16 @@ impl Tactic {
                 }]
             }
 
-            // ターゲットを `⊥` に変更（爆発原理）
-            Self::Exfalso => {
-                assert!(goal.target != False, "exfalso: target is already ⊥");
+            // 結論を `⊥` に変更
+            Exfalso => {
                 vec![Goal {
                     hypotheses: goal.hypotheses.clone(),
                     target: False,
                 }]
             }
 
-            // ターゲット `⊢ P` を `¬P ⊢ ⊥` に変換（背理法）
-            Self::ByContra => {
-                assert!(goal.target != False, "by_contra: target is already ⊥");
+            // `⊢ P` を `¬P ⊢ ⊥` に変換（背理法）
+            ByContra => {
                 let p = goal.target.clone();
                 let mut next = goal.clone();
                 next.hypotheses.push(Not(Box::new(p)));
@@ -159,18 +161,14 @@ impl Tactic {
                 vec![next]
             }
 
-            // 仮説のうちゴールと一致するものがあれば証明完了
-            Self::Assumption => {
-                assert!(
-                    goal.hypotheses.iter().any(|h| h == &goal.target),
-                    "assumption: no matching hypothesis"
-                );
+            // 仮説のうち結論と一致するものがあれば証明完了
+            Assumption => {
                 vec![]
             }
 
-            // 仮定 `¬P ⊢` を `⊢ P` に変換
-            Self::ApplyNot { hyp } => {
-                let Some(Not(p)) = goal.hypotheses.get(*hyp) else {
+            // `¬P ⊢ ⊥` を `¬P ⊢ P` に変換
+            ApplyNot { i: hypotheses } => {
+                let Some(Not(p)) = goal.hypotheses.get(*hypotheses) else {
                     unreachable!()
                 };
                 vec![Goal {
@@ -179,16 +177,9 @@ impl Tactic {
                 }]
             }
 
-            // 仮定 `P → Q ⊢` を `⊢ P` と `Q ⊢` に変換
-            Self::ApplyTo { hyp } => {
-                let Some(To(_p, q)) = goal.hypotheses.get(*hyp) else {
-                    unreachable!()
-                };
-                assert!(
-                    q.as_ref() == &goal.target,
-                    "apply_to: conclusion does not match target"
-                );
-                let To(p, _) = &goal.hypotheses[*hyp] else {
+            // `P → Q ⊢` を `⊢ P` と `Q ⊢` に分割
+            ApplyTo { i: hypotheses } => {
+                let To(p, q) = &goal.hypotheses[*hypotheses] else {
                     unreachable!()
                 };
                 vec![
@@ -207,88 +198,77 @@ impl Tactic {
                 ]
             }
 
-            // 仮定 `P ↔ Q ⊢` をターゲットに合わせて `⊢ P` または `⊢ Q` に変換
-            Self::ApplyIff { hyp } => {
-                let Some(Iff(p, q)) = goal.hypotheses.get(*hyp) else {
+            // `P ↔ Q ⊢ P` を `P ↔ Q ⊢ Q に変換
+            // `P ↔ Q ⊢ Q` を `P ↔ Q ⊢ P に変換
+            ApplyIff { i: hypotheses } => {
+                let Some(Iff(p, q)) = goal.hypotheses.get(*hypotheses) else {
                     unreachable!()
                 };
-                if q.as_ref() == &goal.target {
-                    vec![Goal {
-                        hypotheses: goal.hypotheses.clone(),
-                        target: *p.clone(),
-                    }]
-                } else if p.as_ref() == &goal.target {
+                if **p == goal.target {
                     vec![Goal {
                         hypotheses: goal.hypotheses.clone(),
                         target: *q.clone(),
                     }]
+                } else if **q == goal.target {
+                    vec![Goal {
+                        hypotheses: goal.hypotheses.clone(),
+                        target: *p.clone(),
+                    }]
                 } else {
-                    unreachable!("apply_iff: neither side matches target")
+                    unreachable!()
                 }
             }
 
-            // 仮定 `P ∧ Q ⊢` を `P, Q ⊢` に分解
-            Self::CasesAnd { hyp } => {
-                let Some(And(p, q)) = goal.hypotheses.get(*hyp) else {
+            // `P ∧ Q ⊢` を `P, Q ⊢` に分解
+            CasesAnd { i: hypotheses } => {
+                let Some(And(p, q)) = goal.hypotheses.get(*hypotheses) else {
                     unreachable!()
                 };
                 let mut next = goal.clone();
-                next.hypotheses.remove(*hyp);
+                next.hypotheses.remove(*hypotheses);
                 next.hypotheses.push(*p.clone());
                 next.hypotheses.push(*q.clone());
                 vec![next]
             }
 
-            // 仮定 `P ∨ Q ⊢` を `P ⊢` と `Q ⊢` に場合分け
-            Self::CasesOr { hyp } => {
-                let Some(Or(p, q)) = goal.hypotheses.get(*hyp) else {
+            // `P ∨ Q ⊢` を `P ⊢` と `Q ⊢` に場合分け
+            CasesOr { i: hypotheses } => {
+                let Some(Or(p, q)) = goal.hypotheses.get(*hypotheses) else {
                     unreachable!()
                 };
                 let mut left = goal.clone();
-                left.hypotheses.remove(*hyp);
+                left.hypotheses.remove(*hypotheses);
                 left.hypotheses.push(*p.clone());
                 let mut right = goal.clone();
-                right.hypotheses.remove(*hyp);
+                right.hypotheses.remove(*hypotheses);
                 right.hypotheses.push(*q.clone());
                 vec![left, right]
             }
 
-            // 仮定 `P ↔ Q ⊢` を `P, Q ⊢` に分解
-            Self::CasesIff { hyp } => {
-                let Some(Iff(p, q)) = goal.hypotheses.get(*hyp) else {
-                    unreachable!()
-                };
-                let mut next = goal.clone();
-                next.hypotheses.remove(*hyp);
-                next.hypotheses.push(*p.clone());
-                next.hypotheses.push(*q.clone());
-                vec![next]
+            // `P ↔ Q ⊢` を `P → Q, Q → P ⊢` に分解
+            CasesIff { i: _hypotheses } => {
+                todo!()
             }
 
-            // 仮定 `∃x P(x) ⊢` を `P(x) ⊢` に変換
-            Self::CasesEx { hyp } => {
-                let Some(Ex { v, body, .. }) = goal.hypotheses.get(*hyp) else {
+            // `∃x P(x) ⊢` を `P(x) ⊢` に変換
+            CasesEx { i: hypotheses } => {
+                let Some(Ex { v, body, .. }) = goal.hypotheses.get(*hypotheses) else {
                     unreachable!()
                 };
                 let mut p = *body.clone();
                 p.open(&Term::Var(v.clone()));
                 let mut next = goal.clone();
-                next.hypotheses.remove(*hyp);
+                next.hypotheses.remove(*hypotheses);
                 next.hypotheses.push(p);
                 vec![next]
             }
 
-            // 仮定 `⊥ ⊢` から証明完了
-            Self::CasesFalse { hyp } => {
-                let Some(False) = goal.hypotheses.get(*hyp) else {
-                    unreachable!()
-                };
-                vec![]
-            }
-
-            // 仮定 `∀x P(x) ⊢` に項 `t` を代入し `P(t) ⊢` を追加
-            Self::SpecializeAll { hyp, term } => {
-                let Some(All { body, .. }) = goal.hypotheses.get(*hyp) else {
+            // `∀x P(x) ⊢` に `Term t` を代入し `∀x P(x), P(t) ⊢` に変換
+            SpecializeAll {
+                i: hypotheses,
+                term,
+            } => {
+                let Some(All { body, .. }) = goal.hypotheses.get(*hypotheses) else {
                     unreachable!()
                 };
                 let mut p = *body.clone();
@@ -298,27 +278,18 @@ impl Tactic {
                 vec![next]
             }
 
-            // 仮定 `P → Q ⊢` と仮定 `P` から `Q ⊢` を追加
-            Self::SpecializeTo { hyp, arg_hyp } => {
-                let Some(To(_p, q)) = goal.hypotheses.get(*hyp) else {
+            // `P → Q, P ⊢` を `P → Q, P, Q ⊢` に変換
+            SpecializeTo { i: hypotheses } => {
+                let To(_, q) = &goal.hypotheses[*hypotheses] else {
                     unreachable!()
                 };
-                let To(p, _) = &goal.hypotheses[*hyp] else {
-                    unreachable!()
-                };
-                assert!(
-                    goal.hypotheses
-                        .get(*arg_hyp)
-                        .is_some_and(|h| h == p.as_ref()),
-                    "specialize_to: argument hypothesis does not match antecedent"
-                );
                 let mut next = goal.clone();
                 next.hypotheses.push(*q.clone());
                 vec![next]
             }
 
             // 中間命題 `P` を導入し、その証明と利用のサブゴールを作成
-            Self::Have { formula } => {
+            Have { formula } => {
                 let mut after = goal.clone();
                 after.hypotheses.push(formula.clone());
                 vec![
@@ -335,108 +306,97 @@ impl Tactic {
     /// タクティクが適用可能かを返す。
     pub fn can_apply(&self, goal: &Goal) -> bool {
         match self {
-            Self::IntroNot => matches!(goal.target, Not(_)),
-            Self::IntroTo => matches!(goal.target, To(..)),
-            Self::IntroAll => matches!(goal.target, All { .. }),
-            Self::ConstructorAnd => matches!(goal.target, And(..)),
-            Self::ConstructorIff => matches!(goal.target, Iff(..)),
-            Self::Left => matches!(goal.target, Or(..)),
-            Self::Right => matches!(goal.target, Or(..)),
-            Self::Exists { .. } => matches!(goal.target, Ex { .. }),
-            Self::Exfalso => goal.target != False,
-            Self::ByContra => goal.target != False,
-            Self::Assumption => goal.hypotheses.iter().any(|h| h == &goal.target),
-            Self::ApplyNot { hyp } => goal.hypotheses.get(*hyp).is_some_and(|h| matches!(h, Not(_))),
-            Self::ApplyTo { hyp } => goal.hypotheses.get(*hyp).is_some_and(|h| {
+            IntroNot => matches!(goal.target, Not(_)),
+            IntroTo => matches!(goal.target, To(..)),
+            IntroAll => matches!(goal.target, All { .. }),
+            ConstructorAnd => matches!(goal.target, And(..)),
+            ConstructorIff => matches!(goal.target, Iff(..)),
+            Left => matches!(goal.target, Or(..)),
+            Right => matches!(goal.target, Or(..)),
+            Exists { .. } => matches!(goal.target, Ex { .. }),
+            Exfalso => goal.target != False,
+            ByContra => goal.target != False,
+            Assumption => goal.hypotheses.iter().any(|h| h == &goal.target),
+            ApplyNot { i } => goal.hypotheses.get(*i).is_some_and(|h| matches!(h, Not(_))),
+            ApplyTo { i } => goal.hypotheses.get(*i).is_some_and(|h| {
                 matches!(h, To(_, q) if q.as_ref() == &goal.target)
             }),
-            Self::ApplyIff { hyp } => goal.hypotheses.get(*hyp).is_some_and(|h| {
+            ApplyIff { i } => goal.hypotheses.get(*i).is_some_and(|h| {
                 matches!(h, Iff(p, q) if q.as_ref() == &goal.target || p.as_ref() == &goal.target)
             }),
-            Self::CasesAnd { hyp } => {
-                goal.hypotheses.get(*hyp).is_some_and(|h| matches!(h, And(..)))
+            CasesAnd { i } => {
+                goal.hypotheses.get(*i).is_some_and(|h| matches!(h, And(..)))
             }
-            Self::CasesOr { hyp } => {
-                goal.hypotheses.get(*hyp).is_some_and(|h| matches!(h, Or(..)))
+            CasesOr { i } => {
+                goal.hypotheses.get(*i).is_some_and(|h| matches!(h, Or(..)))
             }
-            Self::CasesIff { hyp } => {
-                goal.hypotheses.get(*hyp).is_some_and(|h| matches!(h, Iff(..)))
+            CasesIff { i } => {
+                goal.hypotheses.get(*i).is_some_and(|h| matches!(h, Iff(..)))
             }
-            Self::CasesEx { hyp } => {
-                goal.hypotheses.get(*hyp).is_some_and(|h| matches!(h, Ex { .. }))
+            CasesEx { i } => {
+                goal.hypotheses.get(*i).is_some_and(|h| matches!(h, Ex { .. }))
             }
-            Self::CasesFalse { hyp } => {
-                goal.hypotheses.get(*hyp).is_some_and(|h| matches!(h, False))
+            SpecializeAll { i, .. } => {
+                goal.hypotheses.get(*i).is_some_and(|h| matches!(h, All { .. }))
             }
-            Self::SpecializeAll { hyp, .. } => {
-                goal.hypotheses.get(*hyp).is_some_and(|h| matches!(h, All { .. }))
+            SpecializeTo { i: _ } => {
+                todo!()
             }
-            Self::SpecializeTo { hyp, arg_hyp } => {
-                goal.hypotheses.get(*hyp).is_some_and(|h| match h {
-                    To(p, _) => goal
-                        .hypotheses
-                        .get(*arg_hyp)
-                        .is_some_and(|a| a == p.as_ref()),
-                    _ => false,
-                })
-            }
-            Self::Have { .. } => true,
+            Have { .. } => true,
         }
     }
 
     /// タクティクの表示名を返す。
     pub const fn label(&self) -> &'static str {
         match self {
-            Self::IntroNot => "Intro¬",
-            Self::IntroTo => "Intro→",
-            Self::IntroAll => "Intro∀",
-            Self::ConstructorAnd => "Conj∧",
-            Self::ConstructorIff => "Conj↔",
-            Self::Left => "Left",
-            Self::Right => "Right",
-            Self::Exists { .. } => "Exists",
-            Self::Exfalso => "ExFalso",
-            Self::ByContra => "ByContra",
-            Self::Assumption => "Assumption",
-            Self::ApplyNot { .. } => "Apply¬",
-            Self::ApplyTo { .. } => "Apply→",
-            Self::ApplyIff { .. } => "Apply↔",
-            Self::CasesAnd { .. } => "Cases∧",
-            Self::CasesOr { .. } => "Cases∨",
-            Self::CasesIff { .. } => "Cases↔",
-            Self::CasesEx { .. } => "Cases∃",
-            Self::CasesFalse { .. } => "Cases⊥",
-            Self::SpecializeAll { .. } => "Specialize∀",
-            Self::SpecializeTo { .. } => "Specialize→",
-            Self::Have { .. } => "Have",
+            IntroNot => "Intro¬",
+            IntroTo => "Intro→",
+            IntroAll => "Intro∀",
+            ConstructorAnd => "Conj∧",
+            ConstructorIff => "Conj↔",
+            Left => "Left",
+            Right => "Right",
+            Exists { .. } => "Exists",
+            Exfalso => "ExFalso",
+            ByContra => "ByContra",
+            Assumption => "Assumption",
+            ApplyNot { .. } => "Apply¬",
+            ApplyTo { .. } => "Apply→",
+            ApplyIff { .. } => "Apply↔",
+            CasesAnd { .. } => "Cases∧",
+            CasesOr { .. } => "Cases∨",
+            CasesIff { .. } => "Cases↔",
+            CasesEx { .. } => "Cases∃",
+            SpecializeAll { .. } => "Specialize∀",
+            SpecializeTo { .. } => "Specialize→",
+            Have { .. } => "Have",
         }
     }
 
     /// タクティクの概要を日本語で返す。
     pub const fn description(&self) -> &'static str {
         match self {
-            Self::IntroNot => "ターゲットの否定を仮定に移す",
-            Self::IntroTo => "含意の前件を仮定に加える",
-            Self::IntroAll => "全称量化子を外して自由変数にする",
-            Self::ConstructorAnd => "連言のターゲットを二つのサブゴールに分割する",
-            Self::ConstructorIff => "同値のターゲットを二方向の含意に分割する",
-            Self::Left => "選言の左側を選んで証明する",
-            Self::Right => "選言の右側を選んで証明する",
-            Self::Exists { .. } => "存在量化の証拠（witness）を与える",
-            Self::Exfalso => "ターゲットを⊥に変える（爆発原理）",
-            Self::ByContra => "背理法：ターゲットの否定を仮定して⊥を導く",
-            Self::Assumption => "仮定のうちターゲットと一致するもので閉じる",
-            Self::ApplyNot { .. } => "否定の仮定を適用し、その否定をターゲットにする",
-            Self::ApplyTo { .. } => "含意の仮定を適用し、前件の証明と後件の利用に分ける",
-            Self::ApplyIff { .. } => "同値の仮定をターゲットに合わせて適用する",
-            Self::CasesAnd { .. } => "連言の仮定を二つの仮定に分解する",
-            Self::CasesOr { .. } => "選言の仮定を場合分けする",
-            Self::CasesIff { .. } => "同値の仮定を二つの含意に分解する",
-            Self::CasesEx { .. } => "存在量化の仮定を具体化する",
-            Self::CasesFalse { .. } => "⊥の仮定からゴールを閉じる",
-            Self::SpecializeAll { .. } => "全称仮定を項で具体化する",
-            Self::SpecializeTo { .. } => "含意の仮定を前件の仮定を用いて後件を導く",
-            Self::Have { .. } => "中間命題を導入し、それを証明してから利用する",
+            IntroNot => "結論の否定を仮定に移す",
+            IntroTo => "含意の前件を仮定に加える",
+            IntroAll => "全称量化子を外して自由変数にする",
+            ConstructorAnd => "連言の結論を二つのサブゴールに分割する",
+            ConstructorIff => "同値の結論を二方向の含意に分割する",
+            Left => "選言の左側を選んで証明する",
+            Right => "選言の右側を選んで証明する",
+            Exists { .. } => "存在量化の証拠（witness）を与える",
+            Exfalso => "結論を⊥に変える（爆発原理）",
+            ByContra => "背理法：結論の否定を仮定して⊥を導く",
+            Assumption => "仮定のうち結論と一致するもので閉じる",
+            ApplyNot { .. } => "否定の仮定を適用し、その否定を結論にする",
+            ApplyTo { .. } => "含意の仮定を適用し、前件の証明と後件の利用に分ける",
+            ApplyIff { .. } => "同値の仮定を結論に合わせて適用する",
+            CasesAnd { .. } => "連言の仮定を二つの仮定に分解する",
+            CasesOr { .. } => "選言の仮定を場合分けする",
+            CasesIff { .. } => "同値の仮定を二つの含意に分解する",
+            CasesEx { .. } => "存在量化の仮定を具体化する",
+            SpecializeAll { .. } => "全称仮定を項で具体化する",
+            SpecializeTo { .. } => "含意の仮定を前件の仮定を用いて後件を導く",
+            Have { .. } => "中間命題を導入し、それを証明してから利用する",
         }
     }
 
@@ -444,34 +404,33 @@ impl Tactic {
     /// 例えば `IntroTo` なら `"⊢ P → Q"` を返す。
     pub fn before(&self, goal: &Goal) -> String {
         match self {
-            Self::IntroNot
-            | Self::IntroTo
-            | Self::IntroAll
-            | Self::ConstructorAnd
-            | Self::ConstructorIff
-            | Self::Left
-            | Self::Right
-            | Self::Exists { .. }
-            | Self::Exfalso
-            | Self::ByContra
-            | Self::Have { .. } => format!("⊢ {}", goal.target),
+            IntroNot
+            | IntroTo
+            | IntroAll
+            | ConstructorAnd
+            | ConstructorIff
+            | Left
+            | Right
+            | Exists { .. }
+            | Exfalso
+            | ByContra
+            | Have { .. } => format!("⊢ {}", goal.target),
 
-            Self::Assumption => {
+            Assumption => {
                 let t = goal.target.to_string();
                 format!("{t} ⊢ {t}")
             }
 
-            Self::ApplyNot { hyp }
-            | Self::ApplyTo { hyp }
-            | Self::ApplyIff { hyp }
-            | Self::CasesAnd { hyp }
-            | Self::CasesOr { hyp }
-            | Self::CasesIff { hyp }
-            | Self::CasesEx { hyp }
-            | Self::CasesFalse { hyp }
-            | Self::SpecializeAll { hyp, .. }
-            | Self::SpecializeTo { hyp, .. } => {
-                format!("{} ⊢", goal.hypotheses[*hyp])
+            ApplyNot { i: hypotheses }
+            | ApplyTo { i: hypotheses }
+            | ApplyIff { i: hypotheses }
+            | CasesAnd { i: hypotheses }
+            | CasesOr { i: hypotheses }
+            | CasesIff { i: hypotheses }
+            | CasesEx { i: hypotheses }
+            | SpecializeAll { i: hypotheses, .. }
+            | SpecializeTo { i: hypotheses, .. } => {
+                format!("{} ⊢", goal.hypotheses[*hypotheses])
             }
         }
     }
@@ -480,44 +439,44 @@ impl Tactic {
     /// 複数のサブゴールがある場合は改行で区切る。
     pub fn after(&self, goal: &Goal) -> String {
         match self {
-            Self::IntroNot => {
+            IntroNot => {
                 let Not(p) = &goal.target else { unreachable!() };
                 format!("{p} ⊢ ⊥")
             }
-            Self::IntroTo => {
+            IntroTo => {
                 let To(p, q) = &goal.target else {
                     unreachable!()
                 };
                 format!("{p} ⊢ {q}")
             }
-            Self::IntroAll => {
+            IntroAll => {
                 format!("⊢ {}", goal.target)
             }
-            Self::ConstructorAnd => {
+            ConstructorAnd => {
                 let And(p, q) = &goal.target else {
                     unreachable!()
                 };
                 format!("⊢ {p}\n⊢ {q}")
             }
-            Self::ConstructorIff => {
+            ConstructorIff => {
                 let Iff(p, q) = &goal.target else {
                     unreachable!()
                 };
                 format!("{p} ⊢ {q}\n{q} ⊢ {p}")
             }
-            Self::Left => {
+            Left => {
                 let Or(p, _) = &goal.target else {
                     unreachable!()
                 };
                 format!("⊢ {p}")
             }
-            Self::Right => {
+            Right => {
                 let Or(_, q) = &goal.target else {
                     unreachable!()
                 };
                 format!("⊢ {q}")
             }
-            Self::Exists { term } => {
+            Exists { term } => {
                 let Ex { body, .. } = &goal.target else {
                     unreachable!()
                 };
@@ -525,26 +484,26 @@ impl Tactic {
                 p.open(term);
                 format!("⊢ {p}")
             }
-            Self::Exfalso => "⊢ ⊥".into(),
-            Self::ByContra => {
+            Exfalso => "⊢ ⊥".into(),
+            ByContra => {
                 let p = goal.target.to_string();
                 format!("¬{p} ⊢ ⊥")
             }
-            Self::Assumption => String::new(),
-            Self::ApplyNot { hyp } => {
-                let Not(p) = &goal.hypotheses[*hyp] else {
+            Assumption => String::new(),
+            ApplyNot { i: hypotheses } => {
+                let Not(p) = &goal.hypotheses[*hypotheses] else {
                     unreachable!()
                 };
                 format!("⊢ {p}")
             }
-            Self::ApplyTo { hyp } => {
-                let To(p, _q) = &goal.hypotheses[*hyp] else {
+            ApplyTo { i: hypotheses } => {
+                let To(p, _q) = &goal.hypotheses[*hypotheses] else {
                     unreachable!()
                 };
                 format!("⊢ {p}\n{_q} ⊢")
             }
-            Self::ApplyIff { hyp } => {
-                let Iff(p, q) = &goal.hypotheses[*hyp] else {
+            ApplyIff { i: hypotheses } => {
+                let Iff(p, q) = &goal.hypotheses[*hypotheses] else {
                     unreachable!()
                 };
                 if q.as_ref() == &goal.target {
@@ -553,48 +512,50 @@ impl Tactic {
                     format!("⊢ {q}")
                 }
             }
-            Self::CasesAnd { hyp } => {
-                let And(p, q) = &goal.hypotheses[*hyp] else {
+            CasesAnd { i: hypotheses } => {
+                let And(p, q) = &goal.hypotheses[*hypotheses] else {
                     unreachable!()
                 };
                 format!("{p}, {q} ⊢")
             }
-            Self::CasesOr { hyp } => {
-                let Or(p, q) = &goal.hypotheses[*hyp] else {
+            CasesOr { i: hypotheses } => {
+                let Or(p, q) = &goal.hypotheses[*hypotheses] else {
                     unreachable!()
                 };
                 format!("{p} ⊢\n{q} ⊢")
             }
-            Self::CasesIff { hyp } => {
-                let Iff(p, q) = &goal.hypotheses[*hyp] else {
+            CasesIff { i: hypotheses } => {
+                let Iff(p, q) = &goal.hypotheses[*hypotheses] else {
                     unreachable!()
                 };
                 format!("{p}, {q} ⊢")
             }
-            Self::CasesEx { hyp } => {
-                let Ex { v, body, .. } = &goal.hypotheses[*hyp] else {
+            CasesEx { i: hypotheses } => {
+                let Ex { v, body, .. } = &goal.hypotheses[*hypotheses] else {
                     unreachable!()
                 };
                 let mut p = *body.clone();
                 p.open(&Term::Var(v.clone()));
                 format!("{p} ⊢")
             }
-            Self::CasesFalse { hyp: _ } => String::new(),
-            Self::SpecializeAll { hyp, term } => {
-                let All { body, .. } = &goal.hypotheses[*hyp] else {
+            SpecializeAll {
+                i: hypotheses,
+                term,
+            } => {
+                let All { body, .. } = &goal.hypotheses[*hypotheses] else {
                     unreachable!()
                 };
                 let mut p = *body.clone();
                 p.open(term);
                 format!("{p} ⊢")
             }
-            Self::SpecializeTo { hyp, .. } => {
-                let To(_p, q) = &goal.hypotheses[*hyp] else {
+            SpecializeTo { i: hypotheses, .. } => {
+                let To(_p, q) = &goal.hypotheses[*hypotheses] else {
                     unreachable!()
                 };
                 format!("{q} ⊢")
             }
-            Self::Have { formula } => {
+            Have { formula } => {
                 format!("⊢ {}\n{} ⊢ {}", formula, formula, goal.target)
             }
         }

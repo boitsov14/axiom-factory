@@ -285,19 +285,19 @@ impl Game {
     pub fn apply_hypothesis(&mut self, hypothesis_index: usize) -> ProofView {
         let tactic = self.goal_with_hypothesis(hypothesis_index).map_or(
             Tactic::ApplyTo {
-                hyp: hypothesis_index,
+                i: hypothesis_index,
             },
             |(goal, hypothesis)| match hypothesis {
                 Not(_) => Tactic::ApplyNot {
-                    hyp: hypothesis_index,
+                    i: hypothesis_index,
                 },
                 Iff(p, q) if q.as_ref() == &goal.target || p.as_ref() == &goal.target => {
                     Tactic::ApplyIff {
-                        hyp: hypothesis_index,
+                        i: hypothesis_index,
                     }
                 }
                 To(..) | _ => Tactic::ApplyTo {
-                    hyp: hypothesis_index,
+                    i: hypothesis_index,
                 },
             },
         );
@@ -331,23 +331,20 @@ impl Game {
     pub fn apply_cases(&mut self, hypothesis_index: usize) -> ProofView {
         let tactic = self.goal_with_hypothesis(hypothesis_index).map_or(
             Tactic::CasesAnd {
-                hyp: hypothesis_index,
+                i: hypothesis_index,
             },
             |(_, hypothesis)| match hypothesis {
                 And(..) => Tactic::CasesAnd {
-                    hyp: hypothesis_index,
+                    i: hypothesis_index,
                 },
                 Or(..) => Tactic::CasesOr {
-                    hyp: hypothesis_index,
+                    i: hypothesis_index,
                 },
                 Iff(..) => Tactic::CasesIff {
-                    hyp: hypothesis_index,
+                    i: hypothesis_index,
                 },
                 Ex { .. } => Tactic::CasesEx {
-                    hyp: hypothesis_index,
-                },
-                False => Tactic::CasesFalse {
-                    hyp: hypothesis_index,
+                    i: hypothesis_index,
                 },
                 _ => unreachable!(),
             },
@@ -370,7 +367,7 @@ impl Game {
         match parse_term_string(term) {
             Ok(term) => {
                 self.state.apply_tactic(Tactic::SpecializeAll {
-                    hyp: hypothesis_index,
+                    i: hypothesis_index,
                     term,
                 });
                 self.proof_view()
@@ -382,11 +379,10 @@ impl Game {
     pub fn apply_specialize_with_hypothesis(
         &mut self,
         hypothesis_index: usize,
-        argument_index: usize,
+        _argument_index: usize,
     ) -> ProofView {
         self.state.apply_tactic(Tactic::SpecializeTo {
-            hyp: hypothesis_index,
-            arg_hyp: argument_index,
+            i: hypothesis_index,
         });
         self.proof_view()
     }
@@ -469,17 +465,17 @@ impl Game {
         self.goal_with_hypothesis(hypothesis_index)
             .is_some_and(|(goal, hypothesis)| match hypothesis {
                 Not(_) => Tactic::ApplyNot {
-                    hyp: hypothesis_index,
+                    i: hypothesis_index,
                 }
                 .can_apply(goal),
                 Iff(p, q) if q.as_ref() == &goal.target || p.as_ref() == &goal.target => {
                     Tactic::ApplyIff {
-                        hyp: hypothesis_index,
+                        i: hypothesis_index,
                     }
                     .can_apply(goal)
                 }
                 To(..) | _ => Tactic::ApplyTo {
-                    hyp: hypothesis_index,
+                    i: hypothesis_index,
                 }
                 .can_apply(goal),
             })
@@ -554,19 +550,19 @@ impl Game {
         self.goal_with_hypothesis(hypothesis_index)
             .map_or(String::new(), |(goal, hypothesis)| match hypothesis {
                 Not(_) => Tactic::ApplyNot {
-                    hyp: hypothesis_index,
+                    i: hypothesis_index,
                 }
                 .description()
                 .into(),
                 Iff(p, q) if q.as_ref() == &goal.target || p.as_ref() == &goal.target => {
                     Tactic::ApplyIff {
-                        hyp: hypothesis_index,
+                        i: hypothesis_index,
                     }
                     .description()
                     .into()
                 }
                 To(..) | _ => Tactic::ApplyTo {
-                    hyp: hypothesis_index,
+                    i: hypothesis_index,
                 }
                 .description()
                 .into(),
@@ -577,27 +573,22 @@ impl Game {
         self.goal_with_hypothesis(hypothesis_index)
             .map_or(String::new(), |(_, hypothesis)| match hypothesis {
                 And(..) => Tactic::CasesAnd {
-                    hyp: hypothesis_index,
+                    i: hypothesis_index,
                 }
                 .description()
                 .into(),
                 Or(..) => Tactic::CasesOr {
-                    hyp: hypothesis_index,
+                    i: hypothesis_index,
                 }
                 .description()
                 .into(),
                 Iff(..) => Tactic::CasesIff {
-                    hyp: hypothesis_index,
+                    i: hypothesis_index,
                 }
                 .description()
                 .into(),
                 Ex { .. } => Tactic::CasesEx {
-                    hyp: hypothesis_index,
-                }
-                .description()
-                .into(),
-                False => Tactic::CasesFalse {
-                    hyp: hypothesis_index,
+                    i: hypothesis_index,
                 }
                 .description()
                 .into(),
@@ -905,31 +896,31 @@ impl State {
 
                     // Apply
                     let apply_tactic: Option<Tactic> = match hyp {
-                        Not(_) => Some(Tactic::ApplyNot { hyp: i }),
+                        Not(_) => Some(Tactic::ApplyNot { i }),
                         Iff(p, q) if q.as_ref() == &goal.target || p.as_ref() == &goal.target => {
-                            Some(Tactic::ApplyIff { hyp: i })
+                            Some(Tactic::ApplyIff { i })
                         }
-                        To(..) => Some(Tactic::ApplyTo { hyp: i }),
+                        To(..) => Some(Tactic::ApplyTo { i }),
                         _ => None,
                     };
                     if let Some(tactic) = apply_tactic
-                        && tactic.can_apply(goal) {
-                            tactics.push(HypothesisTacticView {
-                                kind: "apply".into(),
-                                label: tactic.label().into(),
-                                description: tactic.description().into(),
-                                before: tactic.before(goal),
-                                after: tactic.after(goal),
-                            });
-                        }
+                        && tactic.can_apply(goal)
+                    {
+                        tactics.push(HypothesisTacticView {
+                            kind: "apply".into(),
+                            label: tactic.label().into(),
+                            description: tactic.description().into(),
+                            before: tactic.before(goal),
+                            after: tactic.after(goal),
+                        });
+                    }
 
                     // Cases
                     let cases_tactic: Option<Tactic> = match hyp {
-                        And(..) => Some(Tactic::CasesAnd { hyp: i }),
-                        Or(..) => Some(Tactic::CasesOr { hyp: i }),
-                        Iff(..) => Some(Tactic::CasesIff { hyp: i }),
-                        Ex { .. } => Some(Tactic::CasesEx { hyp: i }),
-                        False => Some(Tactic::CasesFalse { hyp: i }),
+                        And(..) => Some(Tactic::CasesAnd { i }),
+                        Or(..) => Some(Tactic::CasesOr { i }),
+                        Iff(..) => Some(Tactic::CasesIff { i }),
+                        Ex { .. } => Some(Tactic::CasesEx { i }),
                         _ => None,
                     };
                     if let Some(tactic) = cases_tactic {
@@ -945,7 +936,7 @@ impl State {
                     // SpecializeAll (∀)
                     if matches!(hyp, All { .. }) {
                         let tactic = Tactic::SpecializeAll {
-                            hyp: i,
+                            i,
                             term: Term::Var("x".into()),
                         };
                         tactics.push(HypothesisTacticView {
@@ -961,10 +952,7 @@ impl State {
                     if let To(p, _) = hyp {
                         for (arg_i, arg_hyp) in goal.hypotheses.iter().enumerate() {
                             if arg_i != i && arg_hyp == p.as_ref() {
-                                let tactic = Tactic::SpecializeTo {
-                                    hyp: i,
-                                    arg_hyp: arg_i,
-                                };
+                                let tactic = Tactic::SpecializeTo { i };
                                 tactics.push(HypothesisTacticView {
                                     kind: "specialize_hypothesis".into(),
                                     label: tactic.label().into(),
@@ -1143,10 +1131,11 @@ impl State {
     fn normalize_selection(&mut self) {
         if let Selection::Hypothesis(index) = self.selected
             && self
-                .current_goal().is_none_or(|goal| index >= goal.hypotheses.len())
-            {
-                self.selected = Selection::Target;
-            }
+                .current_goal()
+                .is_none_or(|goal| index >= goal.hypotheses.len())
+        {
+            self.selected = Selection::Target;
+        }
     }
 }
 
