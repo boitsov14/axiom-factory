@@ -2,8 +2,8 @@ use crate::{
     ids::fresh,
     syntax::{Formula, Formula::*, Goal, Term},
 };
+use maplit::hashset;
 use Tactic::*;
-use std::collections::HashSet;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Tactic {
@@ -68,7 +68,7 @@ impl Tactic {
                 let All { v, body, .. } = &goal.target else {
                     unreachable!()
                 };
-                let mut used = HashSet::new();
+                let mut used = hashset!();
                 for h in &goal.hypotheses {
                     h.ids(&mut used);
                 }
@@ -303,7 +303,7 @@ impl Tactic {
                 let Ex { v, body, .. } = &goal.hypotheses[*i] else {
                     unreachable!()
                 };
-                let mut used = HashSet::new();
+                let mut used = hashset!();
                 for h in &goal.hypotheses {
                     h.ids(&mut used);
                 }

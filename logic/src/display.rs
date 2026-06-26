@@ -2,6 +2,7 @@ use crate::{
     ids::fresh,
     syntax::{Formula, Formula::*, Id, Sort, Sort::*, Term, Term::*},
 };
+use maplit::hashset;
 use std::{collections::HashSet, fmt};
 
 impl Term {
@@ -104,7 +105,7 @@ impl fmt::Display for Term {
 
 impl fmt::Display for Formula {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let mut used = HashSet::new();
+        let mut used = hashset!();
         self.ids(&mut used);
         let s = self.to_text(&mut vec![], &mut used);
         // 一番外側の括弧を削除する

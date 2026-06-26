@@ -2,6 +2,12 @@
 - Write `mod tests` at the bottom of the file. Confidence: 0.70
 - Avoid `is_ok()`/`is_err()` in tests; verify actual parsed/result values to confirm correctness. Confidence: 0.70
 
+# workflow
+- Read AGENTS.md before making code changes. Confidence: 0.85
+
+# rust-tools
+- Use `maplit` macros (`hashset!`, `hashmap!`) instead of `std::collections` constructors. Confidence: 0.70
+
 # syntax-design
 - Use mathematical/logic textbook notation (e.g., `P(x)` instead of Lean-style `P x`). Confidence: 0.75
 - Use right-associative infix operators with precedence: ¬, ∀, ∃ > ∧ > ∨ > → > ↔. Confidence: 0.75
