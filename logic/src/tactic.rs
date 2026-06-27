@@ -2,8 +2,8 @@ use crate::{
     ids::fresh,
     syntax::{Formula, Formula::*, Goal, Term},
 };
-use maplit::hashset;
 use Tactic::*;
+use maplit::hashset;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Tactic {
@@ -20,7 +20,8 @@ pub enum Tactic {
     Assumption,
     ApplyNot { i: usize },
     ApplyTo { i: usize },
-    ApplyIff { i: usize },
+    ApplyIffFwd { i: usize },
+    ApplyIffRev { i: usize },
     CasesAnd { i: usize },
     CasesOr { i: usize },
     CasesIff { i: usize },
@@ -68,16 +69,18 @@ impl Tactic {
                 let All { v, body, .. } = &goal.target else {
                     unreachable!()
                 };
-                let mut used = hashset!();
-                for h in &goal.hypotheses {
-                    h.ids(&mut used);
-                }
-                let x = fresh(v, &used);
-                let mut p = *body.clone();
-                p.open(&Term::Var(x));
                 vec![Goal {
                     hypotheses: goal.hypotheses.clone(),
-                    target: p,
+                    target: {
+                        let mut used = hashset!();
+                        for h in &goal.hypotheses {
+                            h.ids(&mut used);
+                        }
+                        let v = fresh(v, &used);
+                        let mut body = *body.clone();
+                        body.open(&Term::Var(v));
+                        body
+                    },
                 }]
             }
 
@@ -150,11 +153,13 @@ impl Tactic {
                 let Ex { body, .. } = &goal.target else {
                     unreachable!()
                 };
-                let mut p = *body.clone();
-                p.open(t);
                 vec![Goal {
                     hypotheses: goal.hypotheses.clone(),
-                    target: p,
+                    target: {
+                        let mut body = *body.clone();
+                        body.open(t);
+                        body
+                    },
                 }]
             }
 
@@ -168,10 +173,10 @@ impl Tactic {
 
             // `⊢ P` を `¬P ⊢ ⊥` に変換（背理法）
             ByContra => {
-                let p = goal.target.clone();
                 vec![Goal {
                     hypotheses: {
                         let mut h = goal.hypotheses.clone();
+                        let p = goal.target.clone();
                         h.push(Not(Box::new(p)));
                         h
                     },
@@ -216,25 +221,26 @@ impl Tactic {
                 ]
             }
 
-            // `P ↔ Q ⊢ P` を `P ↔ Q ⊢ Q に変換
-            // `P ↔ Q ⊢ Q` を `P ↔ Q ⊢ P に変換
-            ApplyIff { i } => {
-                let Some(Iff(p, q)) = goal.hypotheses.get(*i) else {
+            // `P ↔ Q ⊢ P` を `P ↔ Q ⊢ Q` に変換
+            ApplyIffFwd { i } => {
+                let Iff(_, q) = &goal.hypotheses[*i] else {
                     unreachable!()
                 };
-                if **p == goal.target {
-                    vec![Goal {
-                        hypotheses: goal.hypotheses.clone(),
-                        target: *q.clone(),
-                    }]
-                } else if **q == goal.target {
-                    vec![Goal {
-                        hypotheses: goal.hypotheses.clone(),
-                        target: *p.clone(),
-                    }]
-                } else {
+                vec![Goal {
+                    hypotheses: goal.hypotheses.clone(),
+                    target: *q.clone(),
+                }]
+            }
+
+            // `P ↔ Q ⊢ Q` を `P ↔ Q ⊢ P` に変換
+            ApplyIffRev { i } => {
+                let Iff(p, _) = &goal.hypotheses[*i] else {
                     unreachable!()
-                }
+                };
+                vec![Goal {
+                    hypotheses: goal.hypotheses.clone(),
+                    target: *p.clone(),
+                }]
             }
 
             // `P ∧ Q ⊢` を `P, Q ⊢` に分解
@@ -303,19 +309,19 @@ impl Tactic {
                 let Ex { v, body, .. } = &goal.hypotheses[*i] else {
                     unreachable!()
                 };
-                let mut used = hashset!();
-                for h in &goal.hypotheses {
-                    h.ids(&mut used);
-                }
-                goal.target.ids(&mut used);
-                let x = fresh(v, &used);
-                let mut p = *body.clone();
-                p.open(&Term::Var(x));
                 vec![Goal {
                     hypotheses: {
                         let mut h = goal.hypotheses.clone();
+                        let mut used = hashset!();
+                        for h in &goal.hypotheses {
+                            h.ids(&mut used);
+                        }
+                        goal.target.ids(&mut used);
+                        let v = fresh(v, &used);
+                        let mut body = *body.clone();
+                        body.open(&Term::Var(v));
                         h.remove(*i);
-                        h.push(p);
+                        h.push(body);
                         h
                     },
                     target: goal.target.clone(),
@@ -327,11 +333,11 @@ impl Tactic {
                 let All { body, .. } = &goal.hypotheses[*i] else {
                     unreachable!()
                 };
-                let mut p = *body.clone();
-                p.open(t);
                 vec![Goal {
                     hypotheses: {
                         let mut h = goal.hypotheses.clone();
+                        let mut p = *body.clone();
+                        p.open(t);
                         h.push(p);
                         h
                     },
@@ -389,27 +395,35 @@ impl Tactic {
             ByContra => goal.target != False,
             Assumption => goal.hypotheses.iter().any(|h| h == &goal.target),
             ApplyNot { i } => goal.hypotheses.get(*i).is_some_and(|h| matches!(h, Not(_))),
-            ApplyTo { i } => goal.hypotheses.get(*i).is_some_and(|h| {
-                matches!(h, To(_, q) if q.as_ref() == &goal.target)
-            }),
-            ApplyIff { i } => goal.hypotheses.get(*i).is_some_and(|h| {
-                matches!(h, Iff(p, q) if q.as_ref() == &goal.target || p.as_ref() == &goal.target)
-            }),
-            CasesAnd { i } => {
-                goal.hypotheses.get(*i).is_some_and(|h| matches!(h, And(..)))
-            }
-            CasesOr { i } => {
-                goal.hypotheses.get(*i).is_some_and(|h| matches!(h, Or(..)))
-            }
-            CasesIff { i } => {
-                goal.hypotheses.get(*i).is_some_and(|h| matches!(h, Iff(..)))
-            }
-            CasesEx { i } => {
-                goal.hypotheses.get(*i).is_some_and(|h| matches!(h, Ex { .. }))
-            }
-            SpecializeAll { i, .. } => {
-                goal.hypotheses.get(*i).is_some_and(|h| matches!(h, All { .. }))
-            }
+            ApplyTo { i } => goal
+                .hypotheses
+                .get(*i)
+                .is_some_and(|h| matches!(h, To(_, q) if q.as_ref() == &goal.target)),
+            ApplyIffFwd { i } => goal
+                .hypotheses
+                .get(*i)
+                .is_some_and(|h| matches!(h, Iff(p, _) if p.as_ref() == &goal.target)),
+            ApplyIffRev { i } => goal
+                .hypotheses
+                .get(*i)
+                .is_some_and(|h| matches!(h, Iff(_, q) if q.as_ref() == &goal.target)),
+            CasesAnd { i } => goal
+                .hypotheses
+                .get(*i)
+                .is_some_and(|h| matches!(h, And(..))),
+            CasesOr { i } => goal.hypotheses.get(*i).is_some_and(|h| matches!(h, Or(..))),
+            CasesIff { i } => goal
+                .hypotheses
+                .get(*i)
+                .is_some_and(|h| matches!(h, Iff(..))),
+            CasesEx { i } => goal
+                .hypotheses
+                .get(*i)
+                .is_some_and(|h| matches!(h, Ex { .. })),
+            SpecializeAll { i, .. } => goal
+                .hypotheses
+                .get(*i)
+                .is_some_and(|h| matches!(h, All { .. })),
             SpecializeTo { i } => {
                 let Some(To(p, _)) = goal.hypotheses.get(*i) else {
                     return false;
@@ -436,7 +450,8 @@ impl Tactic {
             Assumption => "Assumption",
             ApplyNot { .. } => "Apply¬",
             ApplyTo { .. } => "Apply→",
-            ApplyIff { .. } => "Apply↔",
+            ApplyIffFwd { .. } => "Apply↔Fwd",
+            ApplyIffRev { .. } => "Apply↔Rev",
             CasesAnd { .. } => "Cases∧",
             CasesOr { .. } => "Cases∨",
             CasesIff { .. } => "Cases↔",
@@ -463,7 +478,8 @@ impl Tactic {
             Assumption => "仮定のうち結論と一致するもので閉じる",
             ApplyNot { .. } => "否定の仮定を適用し、その否定を結論にする",
             ApplyTo { .. } => "含意の仮定を適用し、前件の証明と後件の利用に分ける",
-            ApplyIff { .. } => "同値の仮定を結論に合わせて適用する",
+            ApplyIffFwd { .. } => "同値の仮定を前向きに適用し、左辺を右辺に置き換える",
+            ApplyIffRev { .. } => "同値の仮定を後ろ向きに適用し、右辺を左辺に置き換える",
             CasesAnd { .. } => "連言の仮定を二つの仮定に分解する",
             CasesOr { .. } => "選言の仮定を場合分けする",
             CasesIff { .. } => "同値の仮定を二つの含意に分解する",
@@ -497,7 +513,8 @@ impl Tactic {
 
             ApplyNot { i: hypotheses }
             | ApplyTo { i: hypotheses }
-            | ApplyIff { i: hypotheses }
+            | ApplyIffFwd { i: hypotheses }
+            | ApplyIffRev { i: hypotheses }
             | CasesAnd { i: hypotheses }
             | CasesOr { i: hypotheses }
             | CasesIff { i: hypotheses }
@@ -576,15 +593,17 @@ impl Tactic {
                 };
                 format!("⊢ {p}\n{_q} ⊢")
             }
-            ApplyIff { i: hypotheses } => {
-                let Iff(p, q) = &goal.hypotheses[*hypotheses] else {
+            ApplyIffFwd { i: hypotheses } => {
+                let Iff(_, q) = &goal.hypotheses[*hypotheses] else {
                     unreachable!()
                 };
-                if q.as_ref() == &goal.target {
-                    format!("⊢ {p}")
-                } else {
-                    format!("⊢ {q}")
-                }
+                format!("⊢ {q}")
+            }
+            ApplyIffRev { i: hypotheses } => {
+                let Iff(p, _) = &goal.hypotheses[*hypotheses] else {
+                    unreachable!()
+                };
+                format!("⊢ {p}")
             }
             CasesAnd { i: hypotheses } => {
                 let And(p, q) = &goal.hypotheses[*hypotheses] else {

@@ -291,11 +291,12 @@ impl Game {
                 Not(_) => Tactic::ApplyNot {
                     i: hypothesis_index,
                 },
-                Iff(p, q) if q.as_ref() == &goal.target || p.as_ref() == &goal.target => {
-                    Tactic::ApplyIff {
-                        i: hypothesis_index,
-                    }
-                }
+                Iff(p, _) if p.as_ref() == &goal.target => Tactic::ApplyIffFwd {
+                    i: hypothesis_index,
+                },
+                Iff(_, q) if q.as_ref() == &goal.target => Tactic::ApplyIffRev {
+                    i: hypothesis_index,
+                },
                 To(..) | _ => Tactic::ApplyTo {
                     i: hypothesis_index,
                 },
@@ -468,12 +469,14 @@ impl Game {
                     i: hypothesis_index,
                 }
                 .can_apply(goal),
-                Iff(p, q) if q.as_ref() == &goal.target || p.as_ref() == &goal.target => {
-                    Tactic::ApplyIff {
-                        i: hypothesis_index,
-                    }
-                    .can_apply(goal)
+                Iff(p, _) if p.as_ref() == &goal.target => Tactic::ApplyIffFwd {
+                    i: hypothesis_index,
                 }
+                .can_apply(goal),
+                Iff(_, q) if q.as_ref() == &goal.target => Tactic::ApplyIffRev {
+                    i: hypothesis_index,
+                }
+                .can_apply(goal),
                 To(..) | _ => Tactic::ApplyTo {
                     i: hypothesis_index,
                 }
@@ -554,13 +557,16 @@ impl Game {
                 }
                 .description()
                 .into(),
-                Iff(p, q) if q.as_ref() == &goal.target || p.as_ref() == &goal.target => {
-                    Tactic::ApplyIff {
-                        i: hypothesis_index,
-                    }
-                    .description()
-                    .into()
+                Iff(p, _) if p.as_ref() == &goal.target => Tactic::ApplyIffFwd {
+                    i: hypothesis_index,
                 }
+                .description()
+                .into(),
+                Iff(_, q) if q.as_ref() == &goal.target => Tactic::ApplyIffRev {
+                    i: hypothesis_index,
+                }
+                .description()
+                .into(),
                 To(..) | _ => Tactic::ApplyTo {
                     i: hypothesis_index,
                 }
@@ -897,9 +903,8 @@ impl State {
                     // Apply
                     let apply_tactic: Option<Tactic> = match hyp {
                         Not(_) => Some(Tactic::ApplyNot { i }),
-                        Iff(p, q) if q.as_ref() == &goal.target || p.as_ref() == &goal.target => {
-                            Some(Tactic::ApplyIff { i })
-                        }
+                        Iff(p, _) if p.as_ref() == &goal.target => Some(Tactic::ApplyIffFwd { i }),
+                        Iff(_, q) if q.as_ref() == &goal.target => Some(Tactic::ApplyIffRev { i }),
                         To(..) => Some(Tactic::ApplyTo { i }),
                         _ => None,
                     };
