@@ -278,7 +278,7 @@ impl Game {
     }
 
     pub fn apply_assumption(&mut self) -> ProofView {
-        self.state.apply_tactic(Tactic::Assumption);
+        self.state.apply_tactic(Tactic::Close);
         self.proof_view()
     }
 
@@ -291,12 +291,12 @@ impl Game {
                 Not(_) => Tactic::ApplyNot {
                     i: hypothesis_index,
                 },
-                Iff(p, _) if p.as_ref() == &goal.target => Tactic::ApplyIffFwd {
-                    i: hypothesis_index,
-                },
-                Iff(_, q) if q.as_ref() == &goal.target => Tactic::ApplyIffRev {
-                    i: hypothesis_index,
-                },
+                Iff(p, _) if p.as_ref() == &goal.target => {
+                    unimplemented!()
+                }
+                Iff(_, q) if q.as_ref() == &goal.target => {
+                    unimplemented!()
+                }
                 To(..) | _ => Tactic::ApplyTo {
                     i: hypothesis_index,
                 },
@@ -457,7 +457,7 @@ impl Game {
     pub fn can_assumption(&self) -> bool {
         self.state
             .current_goal()
-            .is_some_and(|goal| Tactic::Assumption.can_apply(goal))
+            .is_some_and(|goal| Tactic::Close.can_apply(goal))
     }
 
     // --- Tactic availability checks (hypothesis-side) ---
@@ -469,14 +469,12 @@ impl Game {
                     i: hypothesis_index,
                 }
                 .can_apply(goal),
-                Iff(p, _) if p.as_ref() == &goal.target => Tactic::ApplyIffFwd {
-                    i: hypothesis_index,
+                Iff(p, _) if p.as_ref() == &goal.target => {
+                    unimplemented!()
                 }
-                .can_apply(goal),
-                Iff(_, q) if q.as_ref() == &goal.target => Tactic::ApplyIffRev {
-                    i: hypothesis_index,
+                Iff(_, q) if q.as_ref() == &goal.target => {
+                    unimplemented!()
                 }
-                .can_apply(goal),
                 To(..) | _ => Tactic::ApplyTo {
                     i: hypothesis_index,
                 }
@@ -557,16 +555,12 @@ impl Game {
                 }
                 .description()
                 .into(),
-                Iff(p, _) if p.as_ref() == &goal.target => Tactic::ApplyIffFwd {
-                    i: hypothesis_index,
+                Iff(p, _) if p.as_ref() == &goal.target => {
+                    unimplemented!()
                 }
-                .description()
-                .into(),
-                Iff(_, q) if q.as_ref() == &goal.target => Tactic::ApplyIffRev {
-                    i: hypothesis_index,
+                Iff(_, q) if q.as_ref() == &goal.target => {
+                    unimplemented!()
                 }
-                .description()
-                .into(),
                 To(..) | _ => Tactic::ApplyTo {
                     i: hypothesis_index,
                 }
@@ -619,7 +613,7 @@ impl Game {
     }
 
     pub fn assumption_description(&self) -> String {
-        Tactic::Assumption.description().into()
+        Tactic::Close.description().into()
     }
 
     pub fn left_description(&self) -> String {
@@ -758,12 +752,12 @@ impl State {
         let mut target = vec![];
 
         // Assumption
-        if Tactic::Assumption.can_apply(goal) {
+        if Tactic::Close.can_apply(goal) {
             target.push(TacticView {
-                label: Tactic::Assumption.label().into(),
-                description: Tactic::Assumption.description().into(),
-                before: Tactic::Assumption.before(goal),
-                after: Tactic::Assumption.after(goal),
+                label: Tactic::Close.label().into(),
+                description: Tactic::Close.description().into(),
+                before: Tactic::Close.before(goal),
+                after: Tactic::Close.after(goal),
                 needs_term_input: false,
                 needs_hypothesis_selection: false,
             });
@@ -903,8 +897,12 @@ impl State {
                     // Apply
                     let apply_tactic: Option<Tactic> = match hyp {
                         Not(_) => Some(Tactic::ApplyNot { i }),
-                        Iff(p, _) if p.as_ref() == &goal.target => Some(Tactic::ApplyIffFwd { i }),
-                        Iff(_, q) if q.as_ref() == &goal.target => Some(Tactic::ApplyIffRev { i }),
+                        Iff(p, _) if p.as_ref() == &goal.target => {
+                            unimplemented!()
+                        }
+                        Iff(_, q) if q.as_ref() == &goal.target => {
+                            unimplemented!()
+                        }
                         To(..) => Some(Tactic::ApplyTo { i }),
                         _ => None,
                     };
