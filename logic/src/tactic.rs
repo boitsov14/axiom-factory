@@ -46,8 +46,6 @@ pub enum Tactic {
     /// - `¬∃x P(x)` を `∀x ¬P(x)` に変換
     /// - `¬∀x P(x)` を `∃x ¬P(x)` に変換
     PushNot { location: RewriteLocation },
-    /// `P ⊢ Q` を `¬Q ⊢ ¬P` に変換
-    Contrapose { i: usize },
     /// 指定した仮説を削除
     Clear { i: usize },
     /// 仮説との一致、`⊥` 仮説、または矛盾する仮説から証明完了
@@ -296,19 +294,6 @@ impl Tactic {
                 vec![goal]
             }
 
-            // `P ⊢ Q` を `¬Q ⊢ ¬P` に変換
-            Contrapose { i } => {
-                vec![Goal {
-                    hypotheses: {
-                        let mut h = goal.hypotheses.clone();
-                        h.remove(*i);
-                        h.push(Not(Box::new(goal.target.clone())));
-                        h
-                    },
-                    target: Not(Box::new(goal.hypotheses[*i].clone())),
-                }]
-            }
-
             // 指定した仮説を削除
             Clear { i } => {
                 vec![Goal {
@@ -539,22 +524,50 @@ impl Tactic {
         }
     }
 
-    /// タクティクが適用可能かを返す
+    /// タクティクが適用可能かを返す。
+    /// `i` で仮説を指定する `Tactic` において、すべての `i` が
+    /// `goal.hypotheses` の有効な添字であることを呼び出し側で保証すること。
     pub fn can_apply(&self, goal: &Goal) -> bool {
         match self {
+            // `⊢ ¬P` を `P ⊢ ⊥` に変換
             IntroNot => matches!(goal.target, Not(_)),
+
+            // `⊢ P → Q` を `P ⊢ Q` に変換
             IntroTo => matches!(goal.target, To(..)),
+
+            // `⊢ ∀x P(x)` を `⊢ P(x)` に変換
             IntroAll => matches!(goal.target, All { .. }),
+
+            // `⊢ P ∧ Q` を `⊢ P` と `⊢ Q` に分割
             ConstructorAnd => matches!(goal.target, And(..)),
+
+            // `⊢ P ↔ Q` を `P ⊢ Q` と `Q ⊢ P` に分割
             ConstructorIff => matches!(goal.target, Iff(..)),
+
+            // `⊢ P ∨ Q` を `⊢ P` に変換
+            // `⊢ P ∨ Q` を `⊢ Q` に変換
             Left | Right => matches!(goal.target, Or(..)),
+
+            // `⊢ ∃x P(x)` を `⊢ P(t)` に変換
             Exists { .. } => matches!(goal.target, Ex { .. }),
+
+            // 結論を `⊥` に変更
+            // `⊢ P` を `¬P ⊢ ⊥` に変換（背理法）
             Exfalso | ByContra => goal.target != False,
+
+            // 結論または仮説の否定を次の規則で内側へ変形
+            // - `¬¬P` を `P` に変換
+            // - `¬(P ∨ Q)` を `¬P ∧ ¬Q` に変換
+            // - `¬(P ∧ Q)` を `¬P ∨ ¬Q` に変換
+            // - `¬(P → Q)` を `P ∧ ¬Q` に変換
+            // - `¬∃x P(x)` を `∀x ¬P(x)` に変換
+            // - `¬∀x P(x)` を `∃x ¬P(x)` に変換
             PushNot { location } => {
-                let Some(Not(p)) = (match location {
-                    RewriteLocation::Target => Some(&goal.target),
-                    RewriteLocation::Hypothesis { i } => goal.hypotheses.get(*i),
-                }) else {
+                let np = match location {
+                    RewriteLocation::Target => &goal.target,
+                    RewriteLocation::Hypothesis { i } => &goal.hypotheses[*i],
+                };
+                let Not(p) = np else {
                     return false;
                 };
                 matches!(
@@ -562,63 +575,70 @@ impl Tactic {
                     Not(_) | Or(..) | And(..) | To(..) | Ex { .. } | All { .. }
                 )
             }
-            Contrapose { i } | Clear { i } => goal.hypotheses.get(*i).is_some(),
+
+            // 仮説と結論の一致、`⊥` 仮説、矛盾する仮説から証明完了
             Close => goal.hypotheses.iter().any(|p| {
                 p == &goal.target
                     || *p == False
                     || matches!(p, Not(q) if goal.hypotheses.contains(q))
             }),
-            ApplyNot { i } => {
-                goal.target == False && goal.hypotheses.get(*i).is_some_and(|h| matches!(h, Not(_)))
-            }
-            ApplyTo { i } => goal
-                .hypotheses
-                .get(*i)
-                .is_some_and(|h| matches!(h, To(_, q) if q.as_ref() == &goal.target)),
-            ForwardTo { i } => goal.hypotheses.get(*i).is_some_and(|h| matches!(h, To(..))),
+
+            // `¬P ⊢ ⊥` を `¬P ⊢ P` に変換
+            ApplyNot { i } => goal.target == False && matches!(&goal.hypotheses[*i], Not(_)),
+
+            // `P → Q ⊢ Q` を `P → Q ⊢ P` に変換
+            ApplyTo { i } => matches!(&goal.hypotheses[*i], To(_, q) if goal.target == **q),
+
+            // `P → Q ⊢ R` を `⊢ P` と `Q ⊢ R` に分割
+            ForwardTo { i } => matches!(&goal.hypotheses[*i], To(_, q) if goal.target != **q),
+
+            // 仮説 `P ↔ Q` により、結論または仮説の `P`, `Q` を書き換える
             RewriteIff {
                 i,
                 direction,
                 location,
             } => {
-                let Some(Iff(p, q)) = goal.hypotheses.get(*i) else {
+                let Iff(p, q) = &goal.hypotheses[*i] else {
                     return false;
                 };
-                let Some(fml) = (match location {
-                    RewriteLocation::Target => Some(&goal.target),
-                    RewriteLocation::Hypothesis { i } => goal.hypotheses.get(*i),
-                }) else {
-                    return false;
+                let fml = match location {
+                    RewriteLocation::Target => &goal.target,
+                    RewriteLocation::Hypothesis { i } => &goal.hypotheses[*i],
                 };
                 match direction {
-                    RewriteDirection::Fwd => fml == p.as_ref(),
-                    RewriteDirection::Rev => fml == q.as_ref(),
+                    RewriteDirection::Fwd => *fml == **p,
+                    RewriteDirection::Rev => *fml == **q,
                 }
             }
-            CasesAnd { i } => goal
-                .hypotheses
-                .get(*i)
-                .is_some_and(|h| matches!(h, And(..))),
-            CasesOr { i } => goal.hypotheses.get(*i).is_some_and(|h| matches!(h, Or(..))),
-            CasesIff { i } => goal
-                .hypotheses
-                .get(*i)
-                .is_some_and(|h| matches!(h, Iff(..))),
-            CasesEx { i } => goal
-                .hypotheses
-                .get(*i)
-                .is_some_and(|h| matches!(h, Ex { .. })),
-            SpecializeAll { i, .. } => goal
-                .hypotheses
-                .get(*i)
-                .is_some_and(|h| matches!(h, All { .. })),
+
+            // `P ∧ Q ⊢` を `P, Q ⊢` に分解
+            CasesAnd { i } => matches!(&goal.hypotheses[*i], And(..)),
+
+            // `P ∨ Q ⊢` を `P ⊢` と `Q ⊢` に場合分け
+            CasesOr { i } => matches!(&goal.hypotheses[*i], Or(..)),
+
+            // `P ↔ Q ⊢` を `P → Q, Q → P ⊢` に分解
+            CasesIff { i } => matches!(&goal.hypotheses[*i], Iff(..)),
+
+            // `∃x P(x) ⊢` を `P(x) ⊢` に変換
+            CasesEx { i } => matches!(&goal.hypotheses[*i], Ex { .. }),
+
+            // `∀x P(x) ⊢` を `∀x P(x), P(t) ⊢` に変換
+            SpecializeAll { i, .. } => matches!(&goal.hypotheses[*i], All { .. }),
+
+            // `P → Q, P ⊢` を `P → Q, P, Q ⊢` に変換
             SpecializeTo { i } => {
-                let Some(To(p, _)) = goal.hypotheses.get(*i) else {
+                let To(p, _) = &goal.hypotheses[*i] else {
                     return false;
                 };
-                goal.hypotheses.iter().any(|h| h == p.as_ref())
+                goal.hypotheses.iter().any(|h| *h == **p)
             }
-            ByCases { .. } | Have { .. } | UseTheorem { .. } => true,
+
+            // 指定した仮説を削除
+            // `⊢ P` を `Q ⊢ P` と `¬Q ⊢ P` に場合分け
+            // 中間命題 `P` を導入し、`⊢ Q` を `⊢ P` と `P ⊢ Q` に分割
+            // 定理を仮説に追加
+            Clear { .. } | ByCases { .. } | Have { .. } | UseTheorem { .. } => true,
         }
     }
 
