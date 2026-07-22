@@ -64,7 +64,7 @@ pub enum Tactic {
     },
     /// `⊢ t = t` を証明完了
     Rfl,
-    /// 仮説 `a = b` により、結論または仮説の `a` を `b` に書き換える
+    /// 仮説 `a = b` により、結論または仮説の `a` を `b`、または `b` を `a` に書き換える
     Rw {
         i: usize,
         direction: RewriteDirection,
@@ -388,7 +388,7 @@ impl Tactic {
                 vec![goal]
             }
 
-            // 仮説 `a = b` により、結論または仮説の `a` を `b` に書き換える
+            // 仮説 `a = b` により、結論または仮説の `a` を `b`、または `b` を `a` に書き換える
             Rw {
                 i,
                 direction,
@@ -681,7 +681,7 @@ impl Tactic {
             // `⊢ t = t` を証明完了
             Rfl => matches!(&goal.target, Eq(s, t) if s == t),
 
-            // 仮説 `a = b` により、結論または仮説の `a` を `b` に書き換える
+            // 仮説 `a = b` により、結論または仮説の `a` を `b`、または `b` を `a` に書き換える
             Rw {
                 i,
                 direction,
@@ -698,8 +698,8 @@ impl Tactic {
                     return false;
                 }
                 let fml = match location {
-                    RewriteLocation::Target => goal.target.clone(),
-                    RewriteLocation::Hypothesis { i } => goal.hypotheses[*i].clone(),
+                    RewriteLocation::Target => &goal.target,
+                    RewriteLocation::Hypothesis { i } => &goal.hypotheses[*i],
                 };
                 fml.contains(from)
             }
@@ -798,7 +798,7 @@ impl Formula {
         match self {
             False => false,
             Atom(_, args) => args.iter().any(|u| u.contains(t)),
-            Eq(s, t) => s.contains(t) || t.contains(t),
+            Eq(u, v) => u.contains(t) || v.contains(t),
             Not(p) => p.contains(t),
             And(p, q) | Or(p, q) | To(p, q) | Iff(p, q) => p.contains(t) || q.contains(t),
             All { body, .. } | Ex { body, .. } => body.contains(t),
