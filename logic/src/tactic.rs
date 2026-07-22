@@ -1,6 +1,6 @@
 use crate::{
     ids::fresh,
-    syntax::{Formula, Formula::*, Goal, Term},
+    syntax::{Formula, Formula::*, Goal, Term, Term::*},
 };
 use Tactic::*;
 use maplit::hashset;
@@ -62,6 +62,18 @@ pub enum Tactic {
         direction: RewriteDirection,
         location: RewriteLocation,
     },
+    /// `⊢ t = t` を証明完了
+    Rfl,
+    /// 仮説 `a = b` により、結論または仮説の `a` を `b` に書き換える
+    Rw {
+        i: usize,
+        direction: RewriteDirection,
+        location: RewriteLocation,
+    },
+    /// `⊢ s = u` を `⊢ s = t` と `⊢ t = u` に分割
+    Calc { t: Term },
+    /// `⊢ f(s, t) = f(u, v)` を `⊢ s = u` と `⊢ t = v` に分割
+    Congr,
     /// `P ∧ Q ⊢` を `P, Q ⊢` に分解
     CasesAnd { i: usize },
     /// `P ∨ Q ⊢` を `P ⊢` と `Q ⊢` に場合分け
@@ -128,7 +140,7 @@ impl Tactic {
                         }
                         let v = fresh(v, &used);
                         let mut body = *body.clone();
-                        body.open(&Term::Var(v));
+                        body.open(&Var(v));
                         body
                     },
                 }]
@@ -307,7 +319,8 @@ impl Tactic {
             }
 
             // 仮説と結論の一致、`⊥` 仮説、矛盾する仮説から証明完了
-            Close => {
+            // `⊢ t = t` を証明完了
+            Close | Rfl => {
                 vec![]
             }
 
@@ -373,6 +386,60 @@ impl Tactic {
                     RewriteLocation::Hypothesis { i } => goal.hypotheses[*i] = fml,
                 }
                 vec![goal]
+            }
+
+            // 仮説 `a = b` により、結論または仮説の `a` を `b` に書き換える
+            Rw {
+                i,
+                direction,
+                location,
+            } => {
+                let Eq(s, t) = &goal.hypotheses[*i] else {
+                    unreachable!()
+                };
+                let (from, to) = match direction {
+                    RewriteDirection::Fwd => (s, t),
+                    RewriteDirection::Rev => (t, s),
+                };
+                let mut goal = goal.clone();
+                let fml = match location {
+                    RewriteLocation::Target => &mut goal.target,
+                    RewriteLocation::Hypothesis { i } => &mut goal.hypotheses[*i],
+                };
+                fml.rewrite(from, to);
+                vec![goal]
+            }
+
+            // `⊢ s = u` を `⊢ s = t` と `⊢ t = u` に分割
+            Calc { t } => {
+                let Eq(s, u) = &goal.target else {
+                    unreachable!()
+                };
+                vec![
+                    Goal {
+                        hypotheses: goal.hypotheses.clone(),
+                        target: Eq(s.clone(), t.clone()),
+                    },
+                    Goal {
+                        hypotheses: goal.hypotheses.clone(),
+                        target: Eq(t.clone(), u.clone()),
+                    },
+                ]
+            }
+
+            // `⊢ f(s, t) = f(u, v)` を `⊢ s = u` と `⊢ t = v` に分割
+            Congr => {
+                let Eq(Fn(_, ss), Fn(_, ts)) = &goal.target else {
+                    unreachable!()
+                };
+                ss.iter()
+                    .zip(ts)
+                    .filter(|(s, t)| s != t)
+                    .map(|(s, t)| Goal {
+                        hypotheses: goal.hypotheses.clone(),
+                        target: Eq(s.clone(), t.clone()),
+                    })
+                    .collect()
             }
 
             // `P ∧ Q ⊢` を `P, Q ⊢` に分解
@@ -451,7 +518,7 @@ impl Tactic {
                         goal.target.ids(&mut used);
                         let v = fresh(v, &used);
                         let mut body = *body.clone();
-                        body.open(&Term::Var(v));
+                        body.open(&Var(v));
                         h.remove(*i);
                         h.push(body);
                         h
@@ -611,6 +678,41 @@ impl Tactic {
                 }
             }
 
+            // `⊢ t = t` を証明完了
+            Rfl => matches!(&goal.target, Eq(s, t) if s == t),
+
+            // 仮説 `a = b` により、結論または仮説の `a` を `b` に書き換える
+            Rw {
+                i,
+                direction,
+                location,
+            } => {
+                let Eq(s, t) = &goal.hypotheses[*i] else {
+                    return false;
+                };
+                let (from, to) = match direction {
+                    RewriteDirection::Fwd => (s, t),
+                    RewriteDirection::Rev => (t, s),
+                };
+                if from == to {
+                    return false;
+                }
+                let fml = match location {
+                    RewriteLocation::Target => goal.target.clone(),
+                    RewriteLocation::Hypothesis { i } => goal.hypotheses[*i].clone(),
+                };
+                fml.contains(from)
+            }
+
+            // `⊢ s = u` を `⊢ s = t` と `⊢ t = u` に分割
+            Calc { .. } => matches!(&goal.target, Eq(..)),
+
+            // `⊢ f(s, t) = f(u, v)` を `⊢ s = u` と `⊢ t = v` に分割
+            Congr => matches!(
+                &goal.target,
+                Eq(Fn(f, ss), Fn(g, ts)) if f == g && ss.len() == ts.len() && ss != ts
+            ),
+
             // `P ∧ Q ⊢` を `P, Q ⊢` に分解
             CasesAnd { i } => matches!(&goal.hypotheses[*i], And(..)),
 
@@ -660,5 +762,68 @@ impl Tactic {
     /// タクティク適用後のゴール表示を返す
     pub fn after(&self, _goal: &Goal) -> String {
         unimplemented!()
+    }
+}
+
+impl Term {
+    /// 指定した項が含まれるかを返す
+    fn contains(&self, t: &Self) -> bool {
+        if self == t {
+            return true;
+        }
+        let Fn(_, args) = self else {
+            return false;
+        };
+        args.iter().any(|u| u.contains(t))
+    }
+
+    /// `from` を `to` に書き換える
+    fn rewrite(&mut self, from: &Self, to: &Self) {
+        if self == from {
+            *self = to.clone();
+            return;
+        }
+        let Fn(_, args) = self else {
+            return;
+        };
+        for t in args {
+            t.rewrite(from, to);
+        }
+    }
+}
+
+impl Formula {
+    /// 指定した項が含まれるかを返す
+    fn contains(&self, t: &Term) -> bool {
+        match self {
+            False => false,
+            Atom(_, args) => args.iter().any(|u| u.contains(t)),
+            Eq(s, t) => s.contains(t) || t.contains(t),
+            Not(p) => p.contains(t),
+            And(p, q) | Or(p, q) | To(p, q) | Iff(p, q) => p.contains(t) || q.contains(t),
+            All { body, .. } | Ex { body, .. } => body.contains(t),
+        }
+    }
+
+    /// `from` を `to` に書き換える
+    fn rewrite(&mut self, from: &Term, to: &Term) {
+        match self {
+            False => {}
+            Atom(_, args) => {
+                for t in args {
+                    t.rewrite(from, to);
+                }
+            }
+            Eq(s, t) => {
+                s.rewrite(from, to);
+                t.rewrite(from, to);
+            }
+            Not(p) => p.rewrite(from, to),
+            And(p, q) | Or(p, q) | To(p, q) | Iff(p, q) => {
+                p.rewrite(from, to);
+                q.rewrite(from, to);
+            }
+            All { body, .. } | Ex { body, .. } => body.rewrite(from, to),
+        }
     }
 }
